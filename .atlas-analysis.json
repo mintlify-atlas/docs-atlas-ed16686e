@@ -1,0 +1,114 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "MiniSat",
+  "projectDescription": "A minimalistic and high-performance SAT solver library for Boolean satisfiability problems",
+  "theme": "aspen",
+  "primaryColor": "#2563eb",
+  "lightColor": "#60a5fa",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/sat-solving",
+              "concepts/variables-literals",
+              "concepts/clauses",
+              "concepts/dimacs-format"
+            ]
+          },
+          {
+            "group": "Advanced Usage",
+            "pages": [
+              "advanced/configuration",
+              "advanced/resource-limits",
+              "advanced/preprocessing",
+              "advanced/performance"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/basic-solving",
+              "examples/incremental-solving",
+              "examples/assumptions",
+              "examples/integration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/solver",
+              "api/simp-solver",
+              "api/solver-types"
+            ]
+          },
+          {
+            "group": "Data Structures",
+            "pages": [
+              "api/mtl/vec",
+              "api/mtl/heap",
+              "api/mtl/map",
+              "api/mtl/alloc"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utils/options",
+              "api/utils/system",
+              "api/utils/parse-utils"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "High-performance CDCL SAT solving algorithm",
+    "Phase-saving and Luby restart heuristics",
+    "Variable elimination and clause simplification",
+    "Blocking literals for efficient unit propagation",
+    "Resource control (CPU time, memory, conflicts)",
+    "Incremental solving with assumptions",
+    "Efficient clause memory allocator",
+    "DIMACS CNF format support"
+  ],
+  "publicApiSurface": [
+    "Minisat::Solver",
+    "Minisat::SimpSolver",
+    "Minisat::Lit",
+    "Minisat::Var",
+    "Minisat::lbool",
+    "Minisat::Clause",
+    "Solver::newVar()",
+    "Solver::addClause()",
+    "Solver::solve()",
+    "Solver::solveLimited()",
+    "Solver::simplify()",
+    "SimpSolver::eliminate()",
+    "SimpSolver::setFrozen()",
+    "vec<T>",
+    "Heap<T>",
+    "Map<K,V>",
+    "IntOption",
+    "BoolOption",
+    "DoubleOption"
+  ]
+}
