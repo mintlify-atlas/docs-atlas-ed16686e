@@ -1,0 +1,392 @@
+---
+title: Parse utilities
+description: Buffered stream reading and parsing utilities for CNF files and command-line options
+---
+
+The ParseUtils module provides utilities for parsing text files and command-line arguments. It includes a buffered stream reader for efficient file I/O and template functions for parsing common patterns like integers, whitespace, and string matching.
+
+## StreamBuffer class
+
+Buffered character stream reader with support for gzip-compressed files.
+
+### Constructor
+
+```cpp
+explicit StreamBuffer(gzFile i)
+```
+
+Creates a buffered stream from a gzip file handle.
+
+<ParamField path="i" type="gzFile" required>
+  gzip file handle obtained from `gzopen()`
+</ParamField>
+
+### Members
+
+<ResponseField name="buffer_size" type="static const int" default="65536">
+  Internal buffer size (64 KB)
+</ResponseField>
+
+### Operators
+
+```cpp
+int operator*() const
+```
+
+Returns the current character, or EOF if at end of file.
+
+<ResponseField name="return" type="int">
+  Current character as unsigned char, or EOF
+</ResponseField>
+
+```cpp
+void operator++()
+```
+
+Advances to the next character in the stream.
+
+```cpp
+int position() const
+```
+
+Returns the current position in the buffer.
+
+<ResponseField name="return" type="int">
+  Current buffer position
+</ResponseField>
+
+### Usage
+
+```cpp
+#include "minisat/utils/ParseUtils.h"
+#include <zlib.h>
+
+using namespace Minisat;
+
+gzFile in = gzopen("input.cnf.gz", "rb");
+if (in == NULL) {
+    fprintf(stderr, "Error opening file\n");
+    exit(1);
+}
+
+StreamBuffer stream(in);
+
+while (*stream != EOF) {
+    char c = *stream;
+    // Process character
+    ++stream;
+}
+
+gzclose(in);
+```
+
+<Info>
+StreamBuffer automatically handles buffering and lookahead, making it efficient for parsing large files. It works seamlessly with both compressed (.gz) and uncompressed files via zlib.
+</Info>
+
+## End-of-file detection
+
+### isEof (StreamBuffer)
+
+```cpp
+static inline bool isEof(StreamBuffer& in)
+```
+
+Checks if a StreamBuffer has reached end of file.
+
+<ParamField path="in" type="StreamBuffer&" required>
+  Stream buffer to check
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  True if at EOF, false otherwise
+</ResponseField>
+
+### isEof (const char*)
+
+```cpp
+static inline bool isEof(const char* in)
+```
+
+Checks if a character pointer has reached null terminator.
+
+<ParamField path="in" type="const char*" required>
+  Character pointer to check
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  True if pointing to '\0', false otherwise
+</ResponseField>
+
+## Parsing functions
+
+All parsing functions are templates that work with both `StreamBuffer` and `const char*` types.
+
+### skipWhitespace
+
+```cpp
+template<class B>
+static void skipWhitespace(B& in)
+```
+
+Skips whitespace characters (space, tab, newline, carriage return).
+
+<ParamField path="in" type="B&" required>
+  Input stream (StreamBuffer or const char*)
+</ParamField>
+
+<Info>
+Skips characters with ASCII values 9-13 (tab, line feed, vertical tab, form feed, carriage return) and 32 (space).
+</Info>
+
+### Usage
+
+```cpp
+StreamBuffer stream(in);
+skipWhitespace(stream);
+// stream now points to first non-whitespace character
+```
+
+### skipLine
+
+```cpp
+template<class B>
+static void skipLine(B& in)
+```
+
+Skips characters until end of line or end of file.
+
+<ParamField path="in" type="B&" required>
+  Input stream
+</ParamField>
+
+### Usage
+
+```cpp
+// Skip comment line in CNF file
+if (*stream == 'c') {
+    skipLine(stream);
+}
+```
+
+### parseInt
+
+```cpp
+template<class B>
+static int parseInt(B& in)
+```
+
+Parses an integer from the input stream, skipping leading whitespace.
+
+<ParamField path="in" type="B&" required>
+  Input stream
+</ParamField>
+
+<ResponseField name="return" type="int">
+  Parsed integer value
+</ResponseField>
+
+<Note>
+Supports optional '+' or '-' sign. Exits with error code 3 if the next non-whitespace character is not a digit or sign.
+</Note>
+
+### Usage
+
+```cpp
+StreamBuffer stream(in);
+
+// Parse "p cnf 100 200" header
+skipWhitespace(stream);
+if (*stream == 'p') {
+    ++stream;
+    skipWhitespace(stream);
+    // Skip "cnf"
+    int num_vars = parseInt(stream);
+    int num_clauses = parseInt(stream);
+}
+```
+
+## String matching
+
+### match
+
+```cpp
+template<class B>
+static bool match(B& in, const char* str)
+```
+
+Matches a string at the current position. Requires random access iterator.
+
+<ParamField path="in" type="B&" required>
+  Input stream (must support indexing with [])
+</ParamField>
+
+<ParamField path="str" type="const char*" required>
+  String to match
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  True if string matches and input is advanced, false otherwise
+</ResponseField>
+
+<Info>
+On success, the input iterator is advanced by the length of the matched string. On failure, the input position is unchanged.
+</Info>
+
+### Usage
+
+```cpp
+const char* input = "-verbosity=2";
+if (match(input, "-verbosity=")) {
+    // input now points to "2"
+    int val = parseInt(input);
+}
+```
+
+### eagerMatch
+
+```cpp
+template<class B>
+static bool eagerMatch(B& in, const char* str)
+```
+
+Matches a string eagerly, consuming characters one at a time. Does not require random access.
+
+<ParamField path="in" type="B&" required>
+  Input stream (only requires operator* and operator++)
+</ParamField>
+
+<ParamField path="str" type="const char*" required>
+  String to match
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  True if string matches, false otherwise
+</ResponseField>
+
+<Note>
+Unlike `match()`, this function consumes characters even if the match ultimately fails. Use this for forward-only iterators like StreamBuffer.
+</Note>
+
+## Complete parsing example
+
+Example of parsing a simplified CNF file:
+
+```cpp
+#include "minisat/utils/ParseUtils.h"
+#include <zlib.h>
+#include <stdio.h>
+
+using namespace Minisat;
+
+void parseCNF(const char* filename) {
+    gzFile in = gzopen(filename, "rb");
+    if (in == NULL) {
+        fprintf(stderr, "ERROR: Could not open file: %s\n", filename);
+        return;
+    }
+    
+    StreamBuffer stream(in);
+    
+    int num_vars = 0;
+    int num_clauses = 0;
+    
+    // Parse header
+    while (!isEof(stream)) {
+        skipWhitespace(stream);
+        
+        if (*stream == 'c') {
+            // Comment line
+            skipLine(stream);
+        } else if (*stream == 'p') {
+            // Problem line: p cnf <vars> <clauses>
+            ++stream;
+            skipWhitespace(stream);
+            
+            // Match "cnf"
+            if (!eagerMatch(stream, "cnf")) {
+                fprintf(stderr, "ERROR: Expected 'cnf' in problem line\n");
+                gzclose(in);
+                return;
+            }
+            
+            num_vars = parseInt(stream);
+            num_clauses = parseInt(stream);
+            skipLine(stream);
+            break;
+        } else {
+            ++stream;
+        }
+    }
+    
+    printf("Variables: %d, Clauses: %d\n", num_vars, num_clauses);
+    
+    // Parse clauses
+    for (int i = 0; i < num_clauses; i++) {
+        skipWhitespace(stream);
+        
+        // Skip comments
+        while (*stream == 'c') {
+            skipLine(stream);
+            skipWhitespace(stream);
+        }
+        
+        // Read literals until 0
+        while (true) {
+            int lit = parseInt(stream);
+            if (lit == 0) break;
+            
+            // Process literal
+            printf("Literal: %d\n", lit);
+        }
+    }
+    
+    gzclose(in);
+}
+
+int main() {
+    parseCNF("example.cnf");
+    return 0;
+}
+```
+
+## Template specialization
+
+All parsing functions work with two main types:
+
+<ResponseField name="StreamBuffer" type="buffered stream">
+  Efficient buffered reading from gzip files. Use for file parsing.
+</ResponseField>
+
+<ResponseField name="const char*" type="string parsing">
+  Direct string parsing. Use for command-line argument parsing.
+</ResponseField>
+
+### Example with const char*
+
+```cpp
+const char* str = "  -verbosity=2";
+skipWhitespace(str);
+if (match(str, "-verbosity=")) {
+    int value = parseInt(str);
+    printf("Verbosity: %d\n", value);
+}
+```
+
+## Integration with Options
+
+The ParseUtils module is used internally by the Options system for parsing command-line arguments:
+
+```cpp
+// From Options.h
+virtual bool parse(const char* str) {
+    const char* span = str;
+    if (!match(span, "-") || !match(span, name) || !match(span, "="))
+        return false;
+    
+    char* end;
+    int32_t tmp = strtol(span, &end, 10);
+    // ... validation and assignment
+    return true;
+}
+```

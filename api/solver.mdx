@@ -1,0 +1,679 @@
+---
+title: Solver
+description: Core SAT solver class implementing CDCL algorithm with modern heuristics
+---
+
+The `Solver` class is the main interface for SAT solving in MiniSat. It implements the Conflict-Driven Clause Learning (CDCL) algorithm with activity-based variable ordering and clause learning.
+
+## Constructor and destructor
+
+### Solver()
+
+Creates a new solver instance with default configuration.
+
+```cpp
+Solver();
+```
+
+### ~Solver()
+
+Virtual destructor for cleanup.
+
+```cpp
+virtual ~Solver();
+```
+
+## Problem specification
+
+### newVar()
+
+Adds a new variable to the solver.
+
+```cpp
+Var newVar(lbool upol = l_Undef, bool dvar = true);
+```
+
+<ParamField path="upol" type="lbool" default="l_Undef">
+  User preferred polarity for the variable. Can be `l_True`, `l_False`, or `l_Undef` for no preference.
+</ParamField>
+
+<ParamField path="dvar" type="bool" default="true">
+  Whether the variable should be a decision variable (eligible for selection in the decision heuristic).
+</ParamField>
+
+<ResponseField name="return" type="Var">
+  The newly created variable identifier.
+</ResponseField>
+
+### releaseVar()
+
+Makes a literal true and promises to never refer to the variable again.
+
+```cpp
+void releaseVar(Lit l);
+```
+
+<ParamField path="l" type="Lit" required>
+  The literal to release.
+</ParamField>
+
+<Warning>
+  After calling this method, the variable should never be referenced again in the solver.
+</Warning>
+
+### addClause()
+
+Adds a clause to the solver. Multiple overloads are available for different clause sizes.
+
+```cpp
+bool addClause(const vec<Lit>& ps);
+bool addClause(Lit p);
+bool addClause(Lit p, Lit q);
+bool addClause(Lit p, Lit q, Lit r);
+bool addClause(Lit p, Lit q, Lit r, Lit s);
+```
+
+<ParamField path="ps" type="const vec<Lit>&">
+  Vector of literals forming the clause.
+</ParamField>
+
+<ParamField path="p" type="Lit">
+  First literal (for unit, binary, ternary, and quaternary clauses).
+</ParamField>
+
+<ParamField path="q" type="Lit">
+  Second literal (for binary, ternary, and quaternary clauses).
+</ParamField>
+
+<ParamField path="r" type="Lit">
+  Third literal (for ternary and quaternary clauses).
+</ParamField>
+
+<ParamField path="s" type="Lit">
+  Fourth literal (for quaternary clauses).
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `false` if the clause makes the formula unsatisfiable, `true` otherwise.
+</ResponseField>
+
+### addEmptyClause()
+
+Adds the empty clause, making the solver contradictory.
+
+```cpp
+bool addEmptyClause();
+```
+
+<ResponseField name="return" type="bool">
+  Returns `false` (the formula becomes unsatisfiable).
+</ResponseField>
+
+### addClause_()
+
+Adds a clause to the solver without making superfluous internal copy.
+
+```cpp
+bool addClause_(vec<Lit>& ps);
+```
+
+<ParamField path="ps" type="vec<Lit>&" required>
+  Vector of literals forming the clause. Will be modified by this method.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `false` if the clause makes the formula unsatisfiable, `true` otherwise.
+</ResponseField>
+
+<Note>
+  This method modifies the passed vector for efficiency. Use the const reference version if you need to preserve the original vector.
+</Note>
+
+## Solving
+
+### solve()
+
+Searches for a satisfying assignment. Multiple overloads support different assumption sets.
+
+```cpp
+bool solve();
+bool solve(Lit p);
+bool solve(Lit p, Lit q);
+bool solve(Lit p, Lit q, Lit r);
+bool solve(const vec<Lit>& assumps);
+```
+
+<ParamField path="p" type="Lit">
+  First assumption literal.
+</ParamField>
+
+<ParamField path="q" type="Lit">
+  Second assumption literal.
+</ParamField>
+
+<ParamField path="r" type="Lit">
+  Third assumption literal.
+</ParamField>
+
+<ParamField path="assumps" type="const vec<Lit>&">
+  Vector of assumption literals that must be satisfied.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `true` if the formula is satisfiable under the given assumptions, `false` otherwise.
+</ResponseField>
+
+<Note>
+  If satisfiable, the model can be read from the `model` member variable.
+</Note>
+
+### solveLimited()
+
+Searches for a model with resource constraints.
+
+```cpp
+lbool solveLimited(const vec<Lit>& assumps);
+```
+
+<ParamField path="assumps" type="const vec<Lit>&" required>
+  Vector of assumption literals.
+</ParamField>
+
+<ResponseField name="return" type="lbool">
+  Returns `l_True` if satisfiable, `l_False` if unsatisfiable, or `l_Undef` if the search was interrupted due to resource limits.
+</ResponseField>
+
+### simplify()
+
+Removes already satisfied clauses.
+
+```cpp
+bool simplify();
+```
+
+<ResponseField name="return" type="bool">
+  Returns `false` if the formula is unsatisfiable, `true` otherwise.
+</ResponseField>
+
+### okay()
+
+Checks if the solver is in a consistent state.
+
+```cpp
+bool okay() const;
+```
+
+<ResponseField name="return" type="bool">
+  Returns `false` if the solver is in a conflicting state, `true` otherwise.
+</ResponseField>
+
+### implies()
+
+Checks logical implications under assumptions.
+
+```cpp
+bool implies(const vec<Lit>& assumps, vec<Lit>& out);
+```
+
+<ParamField path="assumps" type="const vec<Lit>&" required>
+  Vector of assumptions.
+</ParamField>
+
+<ParamField path="out" type="vec<Lit>&" required>
+  Output vector for implied literals.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `true` if implications were found.
+</ResponseField>
+
+## Variable mode
+
+### setPolarity()
+
+Declares which polarity the decision heuristic should use for a variable.
+
+```cpp
+void setPolarity(Var v, lbool b);
+```
+
+<ParamField path="v" type="Var" required>
+  The variable to configure.
+</ParamField>
+
+<ParamField path="b" type="lbool" required>
+  The preferred polarity: `l_True`, `l_False`, or `l_Undef`.
+</ParamField>
+
+<Note>
+  Requires the polarity mode to be set to 'polarity_user' in solver configuration.
+</Note>
+
+### setDecisionVar()
+
+Declares if a variable should be eligible for selection in the decision heuristic.
+
+```cpp
+void setDecisionVar(Var v, bool b);
+```
+
+<ParamField path="v" type="Var" required>
+  The variable to configure.
+</ParamField>
+
+<ParamField path="b" type="bool" required>
+  `true` to make the variable a decision variable, `false` to exclude it from decisions.
+</ParamField>
+
+## Read state
+
+### value()
+
+Gets the current value of a variable or literal.
+
+```cpp
+lbool value(Var x) const;
+lbool value(Lit p) const;
+```
+
+<ParamField path="x" type="Var">
+  Variable to query.
+</ParamField>
+
+<ParamField path="p" type="Lit">
+  Literal to query.
+</ParamField>
+
+<ResponseField name="return" type="lbool">
+  Current assignment: `l_True`, `l_False`, or `l_Undef` if unassigned.
+</ResponseField>
+
+### modelValue()
+
+Gets the value of a variable or literal in the last model.
+
+```cpp
+lbool modelValue(Var x) const;
+lbool modelValue(Lit p) const;
+```
+
+<ParamField path="x" type="Var">
+  Variable to query.
+</ParamField>
+
+<ParamField path="p" type="Lit">
+  Literal to query.
+</ParamField>
+
+<ResponseField name="return" type="lbool">
+  Value in the last model: `l_True` or `l_False`.
+</ResponseField>
+
+<Warning>
+  The last call to `solve()` must have been satisfiable before calling this method.
+</Warning>
+
+### nAssigns()
+
+Gets the current number of assigned literals.
+
+```cpp
+int nAssigns() const;
+```
+
+<ResponseField name="return" type="int">
+  Number of assigned literals.
+</ResponseField>
+
+### nClauses()
+
+Gets the current number of original clauses.
+
+```cpp
+int nClauses() const;
+```
+
+<ResponseField name="return" type="int">
+  Number of original clauses.
+</ResponseField>
+
+### nLearnts()
+
+Gets the current number of learnt clauses.
+
+```cpp
+int nLearnts() const;
+```
+
+<ResponseField name="return" type="int">
+  Number of learnt clauses.
+</ResponseField>
+
+### nVars()
+
+Gets the current number of variables.
+
+```cpp
+int nVars() const;
+```
+
+<ResponseField name="return" type="int">
+  Total number of variables in the solver.
+</ResponseField>
+
+### nFreeVars()
+
+Gets the number of free (unassigned) variables.
+
+```cpp
+int nFreeVars() const;
+```
+
+<ResponseField name="return" type="int">
+  Number of unassigned variables.
+</ResponseField>
+
+### printStats()
+
+Prints current statistics to standard output.
+
+```cpp
+void printStats() const;
+```
+
+## Resource constraints
+
+### setConfBudget()
+
+Sets a conflict budget for the solver.
+
+```cpp
+void setConfBudget(int64_t x);
+```
+
+<ParamField path="x" type="int64_t" required>
+  Maximum number of conflicts allowed.
+</ParamField>
+
+### setPropBudget()
+
+Sets a propagation budget for the solver.
+
+```cpp
+void setPropBudget(int64_t x);
+```
+
+<ParamField path="x" type="int64_t" required>
+  Maximum number of propagations allowed.
+</ParamField>
+
+### budgetOff()
+
+Disables all resource budgets.
+
+```cpp
+void budgetOff();
+```
+
+### interrupt()
+
+Triggers a potentially asynchronous interruption of the solver.
+
+```cpp
+void interrupt();
+```
+
+<Note>
+  This method can be called from another thread to interrupt a running search.
+</Note>
+
+### clearInterrupt()
+
+Clears the interrupt indicator flag.
+
+```cpp
+void clearInterrupt();
+```
+
+## Clause iteration
+
+### clausesBegin() / clausesEnd()
+
+Iterators for traversing original clauses.
+
+```cpp
+ClauseIterator clausesBegin() const;
+ClauseIterator clausesEnd() const;
+```
+
+<ResponseField name="return" type="ClauseIterator">
+  Iterator pointing to the beginning or end of the clause list.
+</ResponseField>
+
+### trailBegin() / trailEnd()
+
+Iterators for traversing top-level assignments.
+
+```cpp
+TrailIterator trailBegin() const;
+TrailIterator trailEnd() const;
+```
+
+<ResponseField name="return" type="TrailIterator">
+  Iterator pointing to the beginning or end of the assignment trail.
+</ResponseField>
+
+## DIMACS output
+
+### toDimacs()
+
+Writes the CNF formula to a file in DIMACS format.
+
+```cpp
+void toDimacs(const char* file);
+void toDimacs(const char* file, Lit p);
+void toDimacs(const char* file, Lit p, Lit q);
+void toDimacs(const char* file, Lit p, Lit q, Lit r);
+void toDimacs(const char* file, const vec<Lit>& assumps);
+void toDimacs(FILE* f, const vec<Lit>& assumps);
+void toDimacs(FILE* f, Clause& c, vec<Var>& map, Var& max);
+```
+
+<ParamField path="file" type="const char*">
+  Path to the output file.
+</ParamField>
+
+<ParamField path="f" type="FILE*">
+  Open file handle for output.
+</ParamField>
+
+<ParamField path="p" type="Lit">
+  First assumption literal.
+</ParamField>
+
+<ParamField path="q" type="Lit">
+  Second assumption literal.
+</ParamField>
+
+<ParamField path="r" type="Lit">
+  Third assumption literal.
+</ParamField>
+
+<ParamField path="assumps" type="const vec<Lit>&">
+  Vector of assumptions to include.
+</ParamField>
+
+<ParamField path="c" type="Clause&">
+  Specific clause to write.
+</ParamField>
+
+<ParamField path="map" type="vec<Var>&">
+  Variable mapping.
+</ParamField>
+
+<ParamField path="max" type="Var&">
+  Maximum variable.
+</ParamField>
+
+## Memory management
+
+### garbageCollect()
+
+Performs garbage collection on internal clause storage.
+
+```cpp
+virtual void garbageCollect();
+```
+
+### checkGarbage()
+
+Checks if garbage collection should be triggered.
+
+```cpp
+void checkGarbage();
+void checkGarbage(double gf);
+```
+
+<ParamField path="gf" type="double">
+  Garbage fraction threshold. Collection is triggered when wasted memory exceeds this fraction.
+</ParamField>
+
+## Public member variables
+
+### Result variables
+
+<ResponseField name="model" type="vec<lbool>">
+  If the problem is satisfiable, this vector contains the model with variable assignments.
+</ResponseField>
+
+<ResponseField name="conflict" type="LSet">
+  If unsatisfiable under assumptions, this represents the final conflict clause expressed in the assumptions.
+</ResponseField>
+
+### Configuration parameters
+
+<ParamField path="verbosity" type="int">
+  Controls output verbosity level.
+</ParamField>
+
+<ParamField path="var_decay" type="double">
+  Variable activity decay factor (default 0.95).
+</ParamField>
+
+<ParamField path="clause_decay" type="double">
+  Clause activity decay factor (default 0.999).
+</ParamField>
+
+<ParamField path="random_var_freq" type="double">
+  Frequency of random variable selection (default 0.0).
+</ParamField>
+
+<ParamField path="random_seed" type="double">
+  Random seed for the solver.
+</ParamField>
+
+<ParamField path="luby_restart" type="bool">
+  Use Luby restart sequence if true.
+</ParamField>
+
+<ParamField path="ccmin_mode" type="int">
+  Conflict clause minimization mode: 0=none, 1=basic, 2=deep.
+</ParamField>
+
+<ParamField path="phase_saving" type="int">
+  Phase saving level: 0=none, 1=limited, 2=full.
+</ParamField>
+
+<ParamField path="rnd_pol" type="bool">
+  Use random polarities for branching heuristics.
+</ParamField>
+
+<ParamField path="rnd_init_act" type="bool">
+  Initialize variable activities with small random values.
+</ParamField>
+
+<ParamField path="garbage_frac" type="double">
+  Fraction of wasted memory allowed before triggering garbage collection.
+</ParamField>
+
+<ParamField path="min_learnts_lim" type="int">
+  Minimum learnt clause limit.
+</ParamField>
+
+<ParamField path="restart_first" type="int">
+  Initial restart limit (default 100).
+</ParamField>
+
+<ParamField path="restart_inc" type="double">
+  Restart limit multiplier for each restart (default 1.5).
+</ParamField>
+
+<ParamField path="learntsize_factor" type="double">
+  Initial learnt clause limit as factor of original clauses (default 1/3).
+</ParamField>
+
+<ParamField path="learntsize_inc" type="double">
+  Learnt clause limit multiplier for each restart (default 1.1).
+</ParamField>
+
+<ParamField path="learntsize_adjust_start_confl" type="int">
+  Conflict count to start adjusting learnt clause limit.
+</ParamField>
+
+<ParamField path="learntsize_adjust_inc" type="double">
+  Adjustment increment for learnt clause limit.
+</ParamField>
+
+### Statistics
+
+<ResponseField name="solves" type="uint64_t">
+  Number of solve calls.
+</ResponseField>
+
+<ResponseField name="starts" type="uint64_t">
+  Number of search restarts.
+</ResponseField>
+
+<ResponseField name="decisions" type="uint64_t">
+  Number of decisions made.
+</ResponseField>
+
+<ResponseField name="rnd_decisions" type="uint64_t">
+  Number of random decisions.
+</ResponseField>
+
+<ResponseField name="propagations" type="uint64_t">
+  Number of propagations performed.
+</ResponseField>
+
+<ResponseField name="conflicts" type="uint64_t">
+  Number of conflicts encountered.
+</ResponseField>
+
+<ResponseField name="dec_vars" type="uint64_t">
+  Number of decision variables.
+</ResponseField>
+
+<ResponseField name="num_clauses" type="uint64_t">
+  Total number of original clauses.
+</ResponseField>
+
+<ResponseField name="num_learnts" type="uint64_t">
+  Total number of learnt clauses.
+</ResponseField>
+
+<ResponseField name="clauses_literals" type="uint64_t">
+  Total literals in original clauses.
+</ResponseField>
+
+<ResponseField name="learnts_literals" type="uint64_t">
+  Total literals in learnt clauses.
+</ResponseField>
+
+<ResponseField name="max_literals" type="uint64_t">
+  Maximum literals encountered.
+</ResponseField>
+
+<ResponseField name="tot_literals" type="uint64_t">
+  Total literals processed.
+</ResponseField>

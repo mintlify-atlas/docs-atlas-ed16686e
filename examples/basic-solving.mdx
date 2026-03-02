@@ -1,0 +1,223 @@
+---
+title: Basic solving
+description: Learn how to use MiniSat to solve SAT problems with simple examples
+---
+
+This guide shows how to create a solver, add clauses, and check satisfiability.
+
+## Simple SAT problem
+
+Here's a complete example that solves a simple SAT problem:
+
+<CodeGroup>
+```cpp Basic example
+#include "minisat/core/Solver.h"
+#include <iostream>
+
+using namespace Minisat;
+
+int main() {
+    // Create solver instance
+    Solver solver;
+    
+    // Create three boolean variables
+    Var x = solver.newVar();
+    Var y = solver.newVar();
+    Var z = solver.newVar();
+    
+    // Add clause: (x OR y)
+    solver.addClause(mkLit(x), mkLit(y));
+    
+    // Add clause: (NOT x OR NOT y OR z)
+    solver.addClause(~mkLit(x), ~mkLit(y), mkLit(z));
+    
+    // Add clause: (NOT z)
+    solver.addClause(~mkLit(z));
+    
+    // Solve the formula
+    bool sat = solver.solve();
+    
+    if (sat) {
+        std::cout << "SAT" << std::endl;
+        std::cout << "x = " << (solver.modelValue(x) == l_True ? "true" : "false") << std::endl;
+        std::cout << "y = " << (solver.modelValue(y) == l_True ? "true" : "false") << std::endl;
+        std::cout << "z = " << (solver.modelValue(z) == l_True ? "true" : "false") << std::endl;
+    } else {
+        std::cout << "UNSAT" << std::endl;
+    }
+    
+    return 0;
+}
+```
+
+```cpp With vector of literals
+#include "minisat/core/Solver.h"
+#include "minisat/mtl/Vec.h"
+#include <iostream>
+
+using namespace Minisat;
+
+int main() {
+    Solver solver;
+    
+    Var a = solver.newVar();
+    Var b = solver.newVar();
+    Var c = solver.newVar();
+    
+    // Build clause using vec<Lit>
+    vec<Lit> clause;
+    clause.push(mkLit(a));
+    clause.push(~mkLit(b));
+    clause.push(mkLit(c));
+    
+    // Add the clause: (a OR NOT b OR c)
+    solver.addClause(clause);
+    
+    // Add more clauses
+    solver.addClause(~mkLit(a), mkLit(b));
+    solver.addClause(~mkLit(c));
+    
+    bool sat = solver.solve();
+    
+    if (sat) {
+        std::cout << "Solution found:" << std::endl;
+        for (int i = 0; i < solver.nVars(); i++) {
+            std::cout << "var" << i << " = " 
+                      << (solver.model[i] == l_True ? "T" : "F") 
+                      << std::endl;
+        }
+    }
+    
+    return 0;
+}
+```
+</CodeGroup>
+
+<Steps>
+
+### Create solver instance
+
+Instantiate the `Solver` class:
+
+```cpp
+Solver solver;
+```
+
+### Create variables
+
+Use `newVar()` to create boolean variables. Variables are represented as integers:
+
+```cpp
+Var x = solver.newVar();
+Var y = solver.newVar();
+```
+
+### Create literals
+
+Literals are created using `mkLit()`. Use `~` for negation:
+
+```cpp
+Lit pos_x = mkLit(x);    // positive literal
+Lit neg_x = ~mkLit(x);   // negative literal (NOT x)
+```
+
+### Add clauses
+
+Clauses can be added in several ways:
+
+```cpp
+// Unit clause
+solver.addClause(mkLit(x));
+
+// Binary clause
+solver.addClause(mkLit(x), mkLit(y));
+
+// Ternary clause
+solver.addClause(mkLit(x), mkLit(y), mkLit(z));
+
+// Quaternary clause
+solver.addClause(mkLit(x), mkLit(y), mkLit(z), mkLit(w));
+
+// Arbitrary length using vec<Lit>
+vec<Lit> clause;
+clause.push(mkLit(x));
+clause.push(~mkLit(y));
+solver.addClause(clause);
+```
+
+### Solve
+
+Call `solve()` to check satisfiability:
+
+```cpp
+bool sat = solver.solve();
+if (sat) {
+    // Formula is satisfiable
+} else {
+    // Formula is unsatisfiable
+}
+```
+
+### Extract model
+
+If satisfiable, extract variable assignments:
+
+```cpp
+if (sat) {
+    lbool val_x = solver.modelValue(x);
+    if (val_x == l_True) {
+        std::cout << "x is true" << std::endl;
+    } else if (val_x == l_False) {
+        std::cout << "x is false" << std::endl;
+    }
+}
+```
+
+</Steps>
+
+## Checking solver state
+
+You can check if the solver is in a consistent state:
+
+```cpp
+if (!solver.okay()) {
+    // Solver detected a conflict during clause addition
+    std::cout << "Formula is trivially UNSAT" << std::endl;
+}
+```
+
+<Note>
+The `okay()` method returns false if the solver has detected that the formula is unsatisfiable during clause addition or simplification.
+</Note>
+
+## Getting solver statistics
+
+Access solver statistics after solving:
+
+```cpp
+std::cout << "Variables: " << solver.nVars() << std::endl;
+std::cout << "Clauses: " << solver.nClauses() << std::endl;
+std::cout << "Decisions: " << solver.decisions << std::endl;
+std::cout << "Conflicts: " << solver.conflicts << std::endl;
+std::cout << "Propagations: " << solver.propagations << std::endl;
+
+// Or print all statistics
+solver.printStats();
+```
+
+## Simplification
+
+Call `simplify()` to perform unit propagation and remove satisfied clauses:
+
+```cpp
+if (!solver.simplify()) {
+    std::cout << "UNSAT by simplification" << std::endl;
+    return;
+}
+
+bool sat = solver.solve();
+```
+
+<Info>
+Simplification is automatically performed during solving, but you can call it explicitly to detect unsatisfiability early.
+</Info>

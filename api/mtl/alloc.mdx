@@ -1,0 +1,280 @@
+---
+title: RegionAllocator<T>
+description: Simple region-based memory allocator for clause storage
+---
+
+## Overview
+
+The `RegionAllocator<T>` template class implements a simple region-based memory allocator. It allocates memory in a contiguous region and uses 32-bit references instead of pointers for memory efficiency. This allocator is primarily used in MiniSat for clause storage.
+
+<Note>
+This allocator does not support individual deallocations. It tracks "wasted" space from freed objects but doesn't reuse it.
+</Note>
+
+## Template parameters
+
+<ParamField path="T" type="typename" required>
+  The unit type for the region. Typically `uint32_t` for byte-level allocation.
+</ParamField>
+
+## Type definitions
+
+<ResponseField name="Ref" type="uint32_t">
+  32-bit reference type used instead of pointers. More compact than 64-bit pointers.
+</ResponseField>
+
+<ResponseField name="Ref_Undef" value="UINT32_MAX">
+  Special value representing an undefined/null reference
+</ResponseField>
+
+<ResponseField name="Unit_Size" value="sizeof(T)">
+  Size in bytes of each allocation unit
+</ResponseField>
+
+## Constructor and destructor
+
+```cpp
+explicit RegionAllocator(uint32_t start_cap = 1024*1024)
+~RegionAllocator()
+```
+
+<ParamField path="start_cap" type="uint32_t" default="1024*1024">
+  Initial capacity in units (default is 1MB worth of units)
+</ParamField>
+
+The allocator automatically grows as needed. Memory is freed when the allocator is destroyed.
+
+## Size tracking
+
+### size
+
+```cpp
+uint32_t size() const
+```
+
+Returns the number of units currently allocated (including wasted space).
+
+### wasted
+
+```cpp
+uint32_t wasted() const
+```
+
+Returns the number of units that have been freed and cannot be reused.
+
+<Info>
+Monitoring wasted space helps determine when to trigger garbage collection in the solver.
+</Info>
+
+## Allocation operations
+
+### alloc
+
+```cpp
+Ref alloc(int size)
+```
+
+Allocates a block of the specified size and returns a reference to it.
+
+<ParamField path="size" type="int" required>
+  Number of units to allocate (must be > 0)
+</ParamField>
+
+**Returns:** A `Ref` (32-bit reference) to the allocated block
+
+<Info>
+Time complexity: O(1) amortized. May trigger capacity expansion.
+</Info>
+
+### free
+
+```cpp
+void free(int size)
+```
+
+Marks units as wasted. Does not actually reclaim memory.
+
+<ParamField path="size" type="int" required>
+  Number of units to mark as wasted
+</ParamField>
+
+<Warning>
+This does not reuse the memory. It only updates the wasted counter.
+</Warning>
+
+## Reference operations
+
+The allocator provides operations to convert between references and pointers:
+
+### operator[] (dereference)
+
+```cpp
+T& operator[](Ref r)
+const T& operator[](Ref r) const
+```
+
+Dereferences a reference to access the stored value.
+
+<ParamField path="r" type="Ref" required>
+  Reference to dereference (must be < size())
+</ParamField>
+
+### lea (Load Effective Address)
+
+```cpp
+T* lea(Ref r)
+const T* lea(Ref r) const
+```
+
+Converts a reference to a pointer.
+
+<ParamField path="r" type="Ref" required>
+  Reference to convert
+</ParamField>
+
+**Returns:** Pointer to the data at the given reference
+
+### ael (Address to reference)
+
+```cpp
+Ref ael(const T* t)
+```
+
+Converts a pointer back to a reference (inverse of `lea`).
+
+<ParamField path="t" type="const T*" required>
+  Pointer within the allocated region
+</ParamField>
+
+**Returns:** The `Ref` corresponding to the pointer
+
+<Warning>
+The pointer must point within the currently allocated region.
+</Warning>
+
+## Capacity management
+
+### capacity (internal)
+
+```cpp
+void capacity(uint32_t min_cap)
+```
+
+Ensures the allocator has at least the specified capacity. Called automatically by `alloc()`.
+
+<ParamField path="min_cap" type="uint32_t" required>
+  Minimum required capacity
+</ParamField>
+
+The capacity grows by a factor of 13/8, carefully designed to reach close to the 2³²-1 limit when using `uint32_t` indices.
+
+<Note>
+Growth sequence ensures maximum use of the 32-bit address space while avoiding overflow.
+</Note>
+
+## Transfer operations
+
+### moveTo
+
+```cpp
+void moveTo(RegionAllocator& to)
+```
+
+Moves all allocated memory to another allocator, leaving this allocator empty.
+
+<ParamField path="to" type="RegionAllocator&" required>
+  Destination allocator (its current contents are freed)
+</ParamField>
+
+## Usage example
+
+```cpp
+#include "minisat/mtl/Alloc.h"
+
+using namespace Minisat;
+
+// Allocate storage for uint32_t units
+RegionAllocator<uint32_t> ra(1024);
+
+// Allocate space for 3 integers
+RegionAllocator<uint32_t>::Ref ref = ra.alloc(3);
+
+// Access allocated memory
+ra[ref + 0] = 10;
+ra[ref + 1] = 20;
+ra[ref + 2] = 30;
+
+// Convert to pointer
+uint32_t* ptr = ra.lea(ref);
+printf("%u %u %u\n", ptr[0], ptr[1], ptr[2]);
+
+// Mark as wasted (doesn't reclaim)
+ra.free(3);
+
+printf("Size: %u, Wasted: %u\n", ra.size(), ra.wasted());
+```
+
+## Typical use in MiniSat
+
+MiniSat uses `RegionAllocator<uint32_t>` for clause storage:
+
+```cpp
+class Clause {
+    // ... clause data
+public:
+    static int size(int num_lits) { 
+        return sizeof(Clause) / sizeof(uint32_t) + num_lits; 
+    }
+};
+
+RegionAllocator<uint32_t> ca;
+
+// Allocate a clause
+int size = Clause::size(3);
+CRef cr = ca.alloc(size);
+
+// Initialize clause
+new (ca.lea(cr)) Clause(literals, 3, learnt);
+
+// Access clause
+Clause& c = ca[cr];
+```
+
+## Design rationale
+
+### Why 32-bit references?
+
+- **Memory efficiency**: Clauses in SAT solvers are small objects referenced frequently. Using 32-bit references instead of 64-bit pointers saves significant memory.
+- **Cache efficiency**: Smaller references improve cache locality.
+- **Sufficient range**: 2³² units provides 16GB of addressable space when `T = uint32_t`, which is adequate for most SAT problems.
+
+### Why region-based allocation?
+
+- **Fast allocation**: O(1) bump-pointer allocation
+- **No fragmentation**: All memory is contiguous
+- **Bulk deallocation**: Can free entire region at once during garbage collection
+- **Simplified management**: No need to track individual deallocations
+
+### Limitations
+
+- **No individual deallocation**: Memory marked as "wasted" cannot be reused
+- **Requires garbage collection**: Periodic compaction needed to reclaim wasted space
+- **Fixed unit size**: Cannot efficiently mix allocations of very different sizes
+
+## Performance characteristics
+
+- **Allocation**: O(1) amortized (may trigger realloc)
+- **Deallocation**: O(1) (just increments wasted counter)
+- **Dereference**: O(1) (simple array access)
+- **Space overhead**: One pointer + two 32-bit integers
+- **Growth factor**: 13/8 (approximately 1.625)
+
+## Memory safety
+
+<Warning>
+References become invalid after:
+- Calling `moveTo()`
+- Allocating enough memory to trigger reallocation (internal `realloc`)
+
+Store references, not pointers, to avoid dangling pointer issues.
+</Warning>

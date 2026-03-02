@@ -1,0 +1,455 @@
+---
+title: Preprocessing and simplification
+description: Reduce problem complexity through variable elimination and clause simplification
+---
+
+MiniSat includes powerful preprocessing techniques that can dramatically reduce problem size and solving time. These techniques are available through the `SimpSolver` class.
+
+## SimpSolver overview
+
+The simplifying solver extends the base solver with preprocessing capabilities:
+
+```cpp
+#include "minisat/simp/SimpSolver.h"
+
+Minisat::SimpSolver solver;
+
+// Add clauses...
+
+// Solve with preprocessing (default)
+bool result = solver.solve();
+```
+
+<Info>
+  `SimpSolver` is a drop-in replacement for `Solver`. All base functionality remains available.
+</Info>
+
+## Variable elimination
+
+Variable elimination removes variables by bounded resolution, potentially simplifying the formula.
+
+### How it works
+
+For a variable `x` appearing in clauses:
+1. Compute all resolvents between positive and negative occurrences
+2. If total clauses decrease (or increase within bounds), eliminate `x`
+3. Replace all clauses containing `x` with resolvents
+4. Store elimination information for model reconstruction
+
+<Note>
+  Eliminated variables are automatically reconstructed in the model if a solution is found.
+</Note>
+
+### Enabling variable elimination
+
+<ParamField path="use_elim" type="boolean" default="true">
+  Master switch for variable elimination
+  
+  ```cpp
+  solver.use_elim = true;  // Enable (default)
+  solver.use_elim = false; // Disable
+  ```
+  
+  Command-line: `-elim` or `-no-elim`
+</ParamField>
+
+### Elimination parameters
+
+<ParamField path="clause_lim" type="integer" default="20">
+  Maximum resolvent clause length
+  
+  Range: `-1` (no limit) or positive integer
+  
+  Variables producing resolvents longer than this are not eliminated.
+  
+  ```cpp
+  solver.clause_lim = 20;  // Default
+  solver.clause_lim = -1;  // No limit (may explode)
+  ```
+  
+  Command-line: `-cl-lim=20`
+</ParamField>
+
+<ParamField path="grow" type="integer" default="0">
+  Allowed clause count increase
+  
+  Number of additional clauses elimination may produce.
+  
+  ```cpp
+  solver.grow = 0;   // Only eliminate if clauses decrease
+  solver.grow = 10;  // Allow up to 10 new clauses
+  ```
+  
+  Command-line: `-grow=0`
+</ParamField>
+
+<ParamField path="subsumption_lim" type="integer" default="1000">
+  Subsumption check size limit
+  
+  Range: `-1` (no limit) or positive integer
+  
+  Skip subsumption checks against clauses larger than this.
+  
+  ```cpp
+  solver.subsumption_lim = 1000;  // Default
+  solver.subsumption_lim = -1;    // Check all clauses
+  ```
+  
+  Command-line: `-sub-lim=1000`
+</ParamField>
+
+### Calling elimination explicitly
+
+```cpp
+Minisat::SimpSolver solver;
+
+// Add all clauses first...
+
+// Perform elimination
+bool ok = solver.eliminate();
+
+if (!ok) {
+    printf("Unsatisfiable after preprocessing\n");
+} else {
+    // Solve the simplified problem
+    bool result = solver.solve();
+}
+```
+
+<ParamField path="eliminate" type="method">
+  Perform variable elimination
+  
+  ```cpp
+  bool eliminate(bool turn_off_elim = false)
+  ```
+  
+  - Returns `false` if formula becomes unsatisfiable
+  - `turn_off_elim`: Disable elimination for future calls
+  - Automatically called by `solve()` unless disabled
+</ParamField>
+
+## Asymmetric branching
+
+Asymmetric branching strengthens clauses by removing literals that are implied by the remaining literals.
+
+<ParamField path="use_asymm" type="boolean" default="false">
+  Enable asymmetric branching
+  
+  ```cpp
+  solver.use_asymm = true;  // Enable
+  solver.use_asymm = false; // Disable (default)
+  ```
+  
+  Command-line: `-asymm` or `-no-asymm`
+  
+  <Warning>
+    Asymmetric branching is expensive. Enable only for hard instances where preprocessing is critical.
+  </Warning>
+</ParamField>
+
+### Example
+
+Given clause `(a ∨ b ∨ c)` and formula implying `(¬a ∧ ¬b) → ¬c`:
+
+Asymmetric branching detects that `c` is implied by `¬a ∧ ¬b`, so the clause can be strengthened to `(a ∨ b)`, removing `c`.
+
+## Subsumption and self-subsuming resolution
+
+Subsumption removes redundant clauses:
+
+- **Subsumption**: Clause `C₁` subsumes `C₂` if `C₁ ⊆ C₂`. Then `C₂` is redundant.
+- **Self-subsuming resolution**: Strengthen clauses by resolution when result subsumes original.
+
+<ParamField path="use_rcheck" type="boolean" default="false">
+  Check if clauses are already implied
+  
+  ```cpp
+  solver.use_rcheck = true;  // Enable
+  solver.use_rcheck = false; // Disable (default)
+  ```
+  
+  Command-line: `-rcheck` or `-no-rcheck`
+  
+  <Warning>
+    This is very expensive and mostly subsumed by subsumption checks. Enable only for experimental purposes.
+  </Warning>
+</ParamField>
+
+## Freezing variables
+
+Prevent specific variables from being eliminated:
+
+```cpp
+Minisat::SimpSolver solver;
+
+Var x = solver.newVar();
+Var y = solver.newVar();
+Var z = solver.newVar();
+
+// Freeze variable x
+solver.setFrozen(x, true);
+
+// x will not be eliminated during preprocessing
+solver.eliminate();
+
+// Unfreeze for future eliminations
+solver.setFrozen(x, false);
+```
+
+<ParamField path="setFrozen" type="method">
+  Freeze or unfreeze a variable
+  
+  ```cpp
+  void setFrozen(Var v, bool b)
+  ```
+  
+  - `v`: Variable to freeze
+  - `b`: `true` to freeze, `false` to unfreeze
+  - Frozen variables are never eliminated
+</ParamField>
+
+### Alternative freeze interface
+
+```cpp
+// Freeze multiple variables
+solver.freezeVar(x);
+solver.freezeVar(y);
+
+// Do something...
+
+// Thaw all frozen variables
+solver.thaw();
+```
+
+<Tip>
+  Freeze output or important variables that must appear in the final model.
+</Tip>
+
+## Preprocessing workflow
+
+Typical preprocessing workflow with `SimpSolver`:
+
+```cpp
+#include "minisat/simp/SimpSolver.h"
+
+Minisat::SimpSolver solver;
+
+// Configure preprocessing
+solver.use_elim = true;
+solver.clause_lim = 30;
+solver.grow = 5;
+solver.use_asymm = false;
+
+// Add all clauses
+for (auto& clause : clauses) {
+    vec<Lit> lits;
+    for (int lit : clause) {
+        lits.push(mkLit(abs(lit)-1, lit < 0));
+    }
+    solver.addClause(lits);
+}
+
+// Freeze important variables
+for (Var v : output_vars) {
+    solver.setFrozen(v, true);
+}
+
+printf("Before: %d vars, %d clauses\n", 
+       solver.nVars(), solver.nClauses());
+
+// Preprocess
+if (!solver.eliminate()) {
+    printf("UNSAT after preprocessing\n");
+    return;
+}
+
+printf("After: %d vars, %d clauses (eliminated %d)\n",
+       solver.nVars(), solver.nClauses(), 
+       solver.eliminated_vars);
+
+// Solve simplified formula
+bool result = solver.solve();
+
+// Model automatically includes eliminated variables
+if (result) {
+    for (Var v = 0; v < solver.nVars(); v++) {
+        printf("v%d = %d\n", v, solver.model[v] == l_True);
+    }
+}
+```
+
+## Controlling solve-time simplification
+
+Control whether `solve()` performs simplification:
+
+```cpp
+// Solve with simplification (default)
+bool result = solver.solve(true, false);
+
+// Solve without simplification
+bool result = solver.solve(false, false);
+
+// Solve and turn off simplification permanently
+bool result = solver.solve(true, true);
+```
+
+<ParamField path="solve" type="method">
+  Solve with simplification control
+  
+  ```cpp
+  bool solve(bool do_simp = true, bool turn_off_simp = false)
+  ```
+  
+  - `do_simp`: Perform simplification before solving
+  - `turn_off_simp`: Disable simplification for future calls
+</ParamField>
+
+## Exporting simplified formulas
+
+Export the simplified formula to DIMACS format:
+
+```bash
+minisat_simp -dimacs=output.cnf input.cnf
+```
+
+Command-line workflow:
+
+```bash
+# Simplify without solving
+minisat_simp -pre -no-solve -dimacs=simplified.cnf input.cnf
+
+# Solve with external solver
+external_solver simplified.cnf
+```
+
+<ParamField path="dimacs" type="string">
+  Output file for simplified formula
+  
+  If specified, simplified formula is written in DIMACS format after preprocessing.
+  
+  Command-line: `-dimacs=output.cnf`
+</ParamField>
+
+## Statistics
+
+Track preprocessing effectiveness:
+
+```cpp
+Minisat::SimpSolver solver;
+
+// Preprocess...
+solver.eliminate();
+
+// Check statistics
+printf("Eliminated variables: %d\n", solver.eliminated_vars);
+printf("Asymmetric literals removed: %d\n", solver.asymm_lits);
+printf("Clause merges: %d\n", solver.merges);
+```
+
+<Tabs>
+  <Tab title="eliminated_vars">
+    Number of variables eliminated through bounded resolution.
+  </Tab>
+  
+  <Tab title="asymm_lits">
+    Number of literals removed by asymmetric branching.
+  </Tab>
+  
+  <Tab title="merges">
+    Number of clause merges during resolution.
+  </Tab>
+</Tabs>
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Use SimpSolver" icon="wand-magic-sparkles">
+    Always prefer `SimpSolver` over `Solver` unless you have specific reasons not to preprocess.
+  </Card>
+  
+  <Card title="Freeze outputs" icon="snowflake">
+    Freeze output or interface variables to keep them in the model.
+  </Card>
+  
+  <Card title="Tune clause limit" icon="ruler">
+    Adjust `clause_lim` based on problem structure. Lower for bounded growth, higher for aggressive elimination.
+  </Card>
+  
+  <Card title="Disable for incremental" icon="layer-group">
+    Turn off simplification (`turn_off_simp=true`) when using incremental solving.
+  </Card>
+</CardGroup>
+
+## Advanced: Checking elimination status
+
+```cpp
+Minisat::SimpSolver solver;
+
+// After preprocessing...
+solver.eliminate();
+
+// Check if specific variable was eliminated
+for (Var v = 0; v < solver.nVars(); v++) {
+    if (solver.isEliminated(v)) {
+        printf("Variable %d was eliminated\n", v);
+    }
+}
+```
+
+<ParamField path="isEliminated" type="method">
+  Check if a variable was eliminated
+  
+  ```cpp
+  bool isEliminated(Var v) const
+  ```
+  
+  Returns `true` if variable `v` was eliminated during preprocessing.
+</ParamField>
+
+## Performance considerations
+
+<Note>
+  Preprocessing is a tradeoff: it takes time upfront but can dramatically reduce solving time.
+</Note>
+
+### When preprocessing helps
+
+- **Structured problems**: Industrial instances with many equivalences
+- **Large formulas**: Problems where size reduction is significant
+- **Hard instances**: When solving time dominates preprocessing time
+
+### When to skip preprocessing
+
+- **Easy problems**: Quick solves where preprocessing overhead isn't worth it
+- **Incremental solving**: Adding clauses repeatedly makes preprocessing ineffective
+- **Real-time constraints**: When preprocessing time is unacceptable
+
+## Garbage collection
+
+Preprocessing can generate memory fragmentation. Control garbage collection:
+
+<ParamField path="simp_garbage_frac" type="double" default="0.5">
+  GC trigger threshold during simplification
+  
+  ```cpp
+  solver.simp_garbage_frac = 0.5;  // GC at 50% waste (default)
+  solver.simp_garbage_frac = 0.2;  // GC at 20% waste (more frequent)
+  ```
+  
+  Command-line: `-simp-gc-frac=0.5`
+</ParamField>
+
+<Tip>
+  Lower values trigger GC more frequently, reducing memory usage but increasing overhead.
+</Tip>
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Configuration" href="/advanced/configuration">
+    All solver configuration options
+  </Card>
+  <Card title="Performance" href="/advanced/performance">
+    Optimize for speed
+  </Card>
+</CardGroup>

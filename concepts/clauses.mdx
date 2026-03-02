@@ -1,0 +1,453 @@
+---
+title: "Clauses"
+description: "Understanding clause representation, storage, and manipulation in MiniSat"
+---
+
+## What is a clause?
+
+A clause is a disjunction (OR) of literals. In conjunctive normal form (CNF), a Boolean formula is expressed as a conjunction (AND) of clauses.
+
+### Example
+
+```
+(x1 ∨ ¬x2 ∨ x3)  // A clause with three literals
+```
+
+This clause is satisfied if at least one of its literals is true.
+
+<Info>
+Clauses are the fundamental constraint in SAT solving. Every SAT problem is expressed as a set of clauses that must all be satisfied simultaneously.
+</Info>
+
+## Clause structure
+
+MiniSat uses a sophisticated representation for efficient clause storage and access:
+
+```cpp SolverTypes.h
+class Clause {
+    struct {
+        unsigned mark      : 2;   // Marking for garbage collection
+        unsigned learnt    : 1;   // Is this a learned clause?
+        unsigned has_extra : 1;   // Has extra data field?
+        unsigned reloced   : 1;   // Has been relocated?
+        unsigned size      : 27;  // Number of literals
+    } header;
+    
+    union {
+        Lit lit;        // The literals
+        float act;      // Activity (for learned clauses)
+        uint32_t abs;   // Abstraction (for original clauses)
+        CRef rel;       // Relocation reference
+    } data[0];  // Flexible array member
+};
+```
+
+<Warning>
+You cannot construct clauses directly using the constructor. Always use the ClauseAllocator to create clauses properly.
+</Warning>
+
+### Clause types
+
+MiniSat distinguishes between two types of clauses:
+
+<Tabs>
+  <Tab title="Original clauses">
+    Clauses from the input problem:
+    
+    ```cpp
+    vec<Lit> lits;
+    lits.push(mkLit(0, false));  // x0
+    lits.push(mkLit(1, true));   // ¬x1
+    lits.push(mkLit(2, false));  // x2
+    
+    solver.addClause(lits);  // Original clause
+    ```
+    
+    **Properties:**
+    - Stored in `clauses` vector
+    - Never deleted (except during simplification)
+    - May have abstraction field for subsumption
+  </Tab>
+  
+  <Tab title="Learned clauses">
+    Clauses derived during conflict analysis:
+    
+    ```cpp
+    // Internal: solver learns clauses automatically
+    vec<CRef> learnts;  // Stores learned clause references
+    ```
+    
+    **Properties:**
+    - Stored in `learnts` vector
+    - Can be deleted when inactive
+    - Have activity field for deletion heuristics
+    - Typically shorter and more focused
+  </Tab>
+</Tabs>
+
+## Adding clauses
+
+MiniSat provides multiple methods to add clauses:
+
+<CodeGroup>
+
+```cpp Vector of literals
+// Most general method
+vec<Lit> clause;
+clause.push(mkLit(0, false));
+clause.push(mkLit(1, true));
+clause.push(mkLit(2, false));
+
+bool ok = solver.addClause(clause);
+if (!ok) {
+    // Adding clause made formula unsatisfiable
+}
+```
+
+```cpp Individual literals
+// Convenience methods for small clauses
+
+// Unit clause (single literal)
+solver.addClause(mkLit(0, false));
+
+// Binary clause (two literals)
+solver.addClause(
+    mkLit(0, false),
+    mkLit(1, true)
+);
+
+// Ternary clause (three literals)
+solver.addClause(
+    mkLit(0, false),
+    mkLit(1, true),
+    mkLit(2, false)
+);
+
+// Quaternary clause (four literals)
+solver.addClause(
+    mkLit(0, false),
+    mkLit(1, true),
+    mkLit(2, false),
+    mkLit(3, true)
+);
+```
+
+```cpp Empty clause
+// Make formula unsatisfiable
+bool ok = solver.addEmptyClause();
+// ok will be false
+```
+
+```cpp In-place addition
+// Avoids internal copy (modifies vector)
+vec<Lit> clause;
+// ... populate clause ...
+solver.addClause_(clause);  // Note the underscore
+// clause may be modified
+```
+
+</CodeGroup>
+
+<Note>
+Adding a clause may trigger unit propagation. If this leads to a conflict, `addClause()` returns false, indicating the formula is unsatisfiable.
+</Note>
+
+## Clause access
+
+Clauses are accessed through clause references (`CRef`):
+
+```cpp
+typedef RegionAllocator<uint32_t>::Ref CRef;
+const CRef CRef_Undef = RegionAllocator<uint32_t>::Ref_Undef;
+```
+
+### Iterating over clauses
+
+<CodeGroup>
+
+```cpp Using iterators
+// Iterate over original clauses
+for (ClauseIterator it = solver.clausesBegin(); 
+     it != solver.clausesEnd(); ++it) {
+    const Clause& c = *it;
+    
+    // Access clause properties
+    int size = c.size();
+    bool is_learnt = c.learnt();
+    
+    // Access literals
+    for (int i = 0; i < c.size(); i++) {
+        Lit lit = c[i];
+    }
+}
+```
+
+```cpp Direct vector access
+// Access through internal vectors
+const vec<CRef>& clauses = solver.clauses;
+const ClauseAllocator& ca = solver.ca;
+
+for (int i = 0; i < clauses.size(); i++) {
+    CRef cr = clauses[i];
+    const Clause& c = ca[cr];
+    // ... process clause ...
+}
+```
+
+```cpp Learned clauses
+// Separately iterate over learned clauses
+const vec<CRef>& learnts = solver.learnts;
+
+for (int i = 0; i < learnts.size(); i++) {
+    CRef cr = learnts[i];
+    const Clause& c = ca[cr];
+    
+    if (c.learnt()) {
+        float activity = c.activity();
+        // Process learned clause
+    }
+}
+```
+
+</CodeGroup>
+
+## Clause operations
+
+### Basic operations
+
+```cpp SolverTypes.h
+// Get clause size
+int size = clause.size();
+
+// Access literals by index
+Lit lit0 = clause[0];
+Lit lit1 = clause[1];
+
+// Get last literal
+Lit last = clause.last();
+
+// Check if learned
+bool is_learnt = clause.learnt();
+
+// Get mark (for algorithms)
+uint32_t mark = clause.mark();
+clause.mark(1);  // Set mark
+```
+
+### Modification operations
+
+```cpp
+// Shrink clause by removing last literals
+clause.shrink(2);  // Remove 2 literals from end
+
+// Remove last literal
+clause.pop();
+
+// Strengthen clause (remove specific literal)
+Lit p = mkLit(2, true);
+clause.strengthen(p);
+```
+
+<Warning>
+Modifying clauses in-place is somewhat unsafe. If you change a clause, you must manually call `calcAbstraction()` afterward for subsumption operations to work correctly.
+</Warning>
+
+### Activity management
+
+Learned clauses have activity scores for deletion heuristics:
+
+```cpp
+if (clause.learnt()) {
+    // Get current activity
+    float act = clause.activity();
+    
+    // Activity is bumped during conflict analysis
+    // Higher activity = more recently useful
+}
+```
+
+## Clause allocation
+
+MiniSat uses a specialized region allocator for efficient clause memory management:
+
+```cpp
+class ClauseAllocator {
+    RegionAllocator<uint32_t> ra;
+    
+public:
+    // Allocate clause from literals
+    CRef alloc(const vec<Lit>& ps, bool learnt = false);
+    
+    // Free clause
+    void free(CRef cid);
+    
+    // Dereference clause reference
+    Clause& operator[](CRef r);
+    const Clause& operator[](CRef r) const;
+};
+```
+
+### Why specialized allocation?
+
+<Accordion title="Memory efficiency">
+  Clauses have variable size, so standard allocators would waste memory. The region allocator packs clauses tightly in a continuous memory region.
+</Accordion>
+
+<Accordion title="Cache performance">
+  Keeping related clauses near each other in memory improves CPU cache hit rates during clause access patterns common in SAT solving.
+</Accordion>
+
+<Accordion title="Garbage collection">
+  The region allocator supports efficient garbage collection. Deleted clauses leave "holes" that are reclaimed during periodic GC.
+  
+  ```cpp
+  void Solver::garbageCollect() {
+      ClauseAllocator to;
+      relocAll(to);  // Move live clauses to new allocator
+  }
+  ```
+</Accordion>
+
+## Special clause operations
+
+### Subsumption
+
+Check if one clause subsumes another:
+
+```cpp SolverTypes.h
+Lit result = clause1.subsumes(clause2);
+
+if (result == lit_Undef) {
+    // clause1 subsumes clause2
+    // clause2 can be removed
+} else if (result == lit_Error) {
+    // No subsumption relationship
+} else {
+    // result is a literal that can be removed
+    // from clause2 (subsumption resolution)
+}
+```
+
+<Info>
+**Subsumption**: Clause C1 subsumes C2 if every literal in C1 appears in C2. If C1 is satisfied, C2 is automatically satisfied, so C2 is redundant.
+</Info>
+
+### Abstraction
+
+Original clauses may store an abstraction for fast subsumption checks:
+
+```cpp
+if (clause.has_extra() && !clause.learnt()) {
+    uint32_t abs = clause.abstraction();
+    // Bit mask of variables in clause
+    // Used for quick subsumption filtering
+}
+```
+
+## Unit clauses
+
+Unit clauses (single literal) receive special treatment:
+
+```cpp
+// Unit clause forces its literal to be true
+solver.addClause(mkLit(5, false));  // x5 must be true
+
+// Internally, this triggers immediate propagation
+// The literal is assigned at decision level 0
+```
+
+<Tip>
+Unit clauses are extremely powerful in SAT solving. They immediately reduce the search space and often trigger chains of propagations.
+</Tip>
+
+## Binary clauses
+
+Binary clauses (two literals) are common and efficient:
+
+```cpp
+// Binary clause: (x1 ∨ x2)
+solver.addClause(
+    mkLit(1, false),
+    mkLit(2, false)
+);
+```
+
+**Special properties:**
+- Very common in industrial problems
+- Efficient for unit propagation
+- Low memory overhead
+- Often form implication graphs
+
+## Watched literals
+
+MiniSat uses a two-watched literal scheme for efficient unit propagation:
+
+```cpp Solver.h
+struct Watcher {
+    CRef cref;    // Clause reference
+    Lit blocker;  // Blocking literal
+    Watcher(CRef cr, Lit p) : cref(cr), blocker(p) {}
+};
+
+OccLists<Lit, vec<Watcher>, WatcherDeleted> watches;
+```
+
+<Info>
+**Watched literals**: Each clause watches two of its literals. The clause only needs to be examined when one of its watched literals becomes false. This dramatically reduces the number of clause examinations during propagation.
+</Info>
+
+### How it works
+
+<Steps>
+  <Step title="Initial setup">
+    Each clause picks two literals to watch (typically the first two).
+  </Step>
+  
+  <Step title="Assignment">
+    When a literal is assigned, only clauses watching that literal are examined.
+  </Step>
+  
+  <Step title="Watch update">
+    If a watched literal becomes false, the clause searches for a new literal to watch. If none exists, unit propagation occurs.
+  </Step>
+  
+  <Step title="Blocking literal">
+    An additional optimization: if the "blocker" literal is true, the clause is already satisfied and doesn't need examination.
+  </Step>
+</Steps>
+
+## Performance considerations
+
+<CardGroup cols={2}>
+  <Card title="Short clauses" icon="gauge-high">
+    Binary and ternary clauses are fastest for propagation and conflict analysis.
+  </Card>
+  
+  <Card title="Learned clauses" icon="brain">
+    Keep learned clause database small through periodic deletion of low-activity clauses.
+  </Card>
+  
+  <Card title="Memory usage" icon="memory">
+    Long clauses consume more memory. Consider preprocessing to shorten them.
+  </Card>
+  
+  <Card title="Garbage collection" icon="trash">
+    Periodic GC prevents memory fragmentation but temporarily pauses solving.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Variables and literals" icon="binary" href="/concepts/variables-literals">
+    Learn about the literals that make up clauses
+  </Card>
+  
+  <Card title="SAT solving" icon="puzzle-piece" href="/concepts/sat-solving">
+    See how clauses are used during the solving process
+  </Card>
+  
+  <Card title="DIMACS format" icon="file-lines" href="/concepts/dimacs-format">
+    Learn how to write clauses in input files
+  </Card>
+</CardGroup>

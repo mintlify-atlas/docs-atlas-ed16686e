@@ -1,0 +1,435 @@
+---
+title: "DIMACS format"
+description: "The standard CNF file format for SAT problems"
+---
+
+## What is DIMACS format?
+
+DIMACS CNF is the standard text format for representing Boolean satisfiability problems. It's named after the Center for Discrete Mathematics and Theoretical Computer Science (DIMACS), which established format standards for SAT competitions.
+
+<Info>
+Almost all SAT solvers, including MiniSat, support DIMACS format as their primary input method. This makes it easy to share SAT problems and compare solver performance.
+</Info>
+
+## Format structure
+
+A DIMACS CNF file consists of:
+
+1. **Comments** (optional): Lines starting with `c`
+2. **Problem line** (required): Specifies format, variable count, and clause count
+3. **Clauses**: Space-separated literal integers, each clause ending with `0`
+
+### Basic example
+
+```dimacs example.cnf
+c This is a comment
+c Problem: (x1 ∨ x2 ∨ ¬x3) ∧ (¬x1 ∨ x3) ∧ (x2 ∨ ¬x3)
+c
+p cnf 3 3
+1 2 -3 0
+-1 3 0
+2 -3 0
+```
+
+<Accordion title="Explanation">
+- Line 1-2: Comments describing the problem
+- Line 4: Problem line declaring CNF format, 3 variables, 3 clauses
+- Line 5: First clause: (x1 ∨ x2 ∨ ¬x3)
+- Line 6: Second clause: (¬x1 ∨ x3)
+- Line 7: Third clause: (x2 ∨ ¬x3)
+</Accordion>
+
+## Problem line
+
+The problem line has the format:
+
+```
+p cnf <variables> <clauses>
+```
+
+- `p`: Indicates problem line
+- `cnf`: Format type (Conjunctive Normal Form)
+- `<variables>`: Number of variables (integer)
+- `<clauses>`: Number of clauses (integer)
+
+### Example
+
+```dimacs
+p cnf 100 450
+```
+
+This declares a problem with 100 variables and 450 clauses.
+
+<Note>
+The problem line helps the solver pre-allocate memory efficiently. However, MiniSat doesn't strictly require the counts to be exact—it can handle more variables or clauses than declared.
+</Note>
+
+## Variables and literals
+
+### Variable numbering
+
+Variables are numbered starting from 1 (not 0):
+
+```
+Variable 1 → x₁
+Variable 2 → x₂
+Variable 3 → x₃
+...
+Variable n → xₙ
+```
+
+<Warning>
+In the DIMACS format, variables start at 1, but in MiniSat's internal representation, they start at 0. MiniSat automatically handles this conversion when parsing.
+</Warning>
+
+### Literal representation
+
+- **Positive integer** represents a positive literal: `5` means x₅
+- **Negative integer** represents a negative literal: `-5` means ¬x₅
+- **Zero** marks the end of a clause: `0`
+
+## Writing clauses
+
+Each clause is written as a sequence of space-separated integers ending with 0:
+
+<CodeGroup>
+
+```dimacs Unit clause
+c Unit clause forces x1 to be true
+1 0
+```
+
+```dimacs Binary clause
+c Binary clause: (x1 ∨ ¬x2)
+1 -2 0
+```
+
+```dimacs Ternary clause
+c Ternary clause: (¬x1 ∨ x2 ∨ x3)
+-1 2 3 0
+```
+
+```dimacs Long clause
+c Longer clause: (x1 ∨ x2 ∨ ¬x3 ∨ x4 ∨ ¬x5 ∨ x6)
+1 2 -3 4 -5 6 0
+```
+
+</CodeGroup>
+
+### Multi-line clauses
+
+Clauses can span multiple lines (newlines are treated as spaces):
+
+```dimacs
+c This clause spans multiple lines
+1 2 3
+4 5 6
+7 8 9 0
+```
+
+<Tip>
+For readability, you can write one literal per line or group related literals together. The only requirement is that the clause ends with 0.
+</Tip>
+
+## Comments
+
+Comments start with `c` and extend to the end of the line:
+
+```dimacs
+c This is a comment
+c Author: John Doe
+c Date: 2024-03-02
+c Description: Example SAT problem
+c
+p cnf 3 2
+c First clause
+1 2 0
+c Second clause  
+-1 3 0
+```
+
+<Note>
+Comments can appear anywhere in the file, even between clauses. They're completely ignored by the parser.
+</Note>
+
+## Complete example
+
+Here's a complete DIMACS file for a simple SAT problem:
+
+```dimacs pigeonhole-3-2.cnf
+c Pigeonhole principle: 3 pigeons, 2 holes
+c This problem is unsatisfiable
+c
+c Variables:
+c x_ij means pigeon i is in hole j
+c x11, x12 (pigeon 1)
+c x21, x22 (pigeon 2)  
+c x31, x32 (pigeon 3)
+c
+p cnf 6 10
+c
+c Each pigeon in at least one hole:
+1 2 0
+3 4 0
+5 6 0
+c
+c At most one pigeon per hole:
+-1 -3 0
+-1 -5 0
+-3 -5 0
+-2 -4 0
+-2 -6 0
+-4 -6 0
+```
+
+## Parsing in MiniSat
+
+MiniSat provides functions to parse DIMACS files:
+
+```cpp Dimacs.h
+#include "minisat/core/Dimacs.h"
+#include <zlib.h>
+
+Solver solver;
+
+// Parse from gzipped file
+gzFile in = gzopen("problem.cnf.gz", "rb");
+if (in == NULL) {
+    fprintf(stderr, "ERROR: Could not open file\n");
+    exit(1);
+}
+
+parse_DIMACS(in, solver);
+gzclose(in);
+
+// Now solve
+lbool result = solver.solve();
+```
+
+<Info>
+MiniSat supports reading both plain text and gzip-compressed DIMACS files. Compressed files are automatically detected and decompressed during parsing.
+</Info>
+
+### Parser behavior
+
+<AccordionGroup>
+  <Accordion title="Variable creation">
+    Variables are created automatically as they appear in clauses:
+    
+    ```cpp Dimacs.h
+    // From readClause implementation
+    var = abs(parsed_lit) - 1;  // Convert to 0-based
+    while (var >= S.nVars()) 
+        S.newVar();  // Create variables as needed
+    ```
+  </Accordion>
+  
+  <Accordion title="Literal conversion">
+    DIMACS literals (1-based with sign) are converted to MiniSat literals:
+    
+    ```cpp Dimacs.h
+    lits.push(
+        (parsed_lit > 0) 
+            ? mkLit(var)      // Positive
+            : ~mkLit(var)     // Negative
+    );
+    ```
+  </Accordion>
+  
+  <Accordion title="Clause addition">
+    Each clause is added immediately after parsing:
+    
+    ```cpp
+    readClause(in, S, lits);
+    S.addClause_(lits);
+    ```
+    
+    If adding a clause makes the formula unsatisfiable, parsing continues but the solver is marked as conflicting.
+  </Accordion>
+  
+  <Accordion title="Header validation">
+    MiniSat can optionally check that the actual number of clauses matches the declared count:
+    
+    ```cpp
+    parse_DIMACS(input_stream, solver, true);  // Strict mode
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Writing DIMACS files
+
+MiniSat can also export problems to DIMACS format:
+
+```cpp
+Solver solver;
+// ... add variables and clauses ...
+
+// Write to file
+solver.toDimacs("output.cnf");
+
+// Write with assumptions
+vec<Lit> assumptions;
+assumptions.push(mkLit(0, false));  // Assume x0 = true
+solver.toDimacs("output-with-assumptions.cnf", assumptions);
+```
+
+<Tip>
+Exporting to DIMACS is useful for debugging, sharing problems, or creating test cases for other solvers.
+</Tip>
+
+## Common patterns
+
+### At-most-one constraints
+
+Express "at most one of these variables is true":
+
+```dimacs
+c At most one of {x1, x2, x3} is true
+c Pairwise exclusions:
+-1 -2 0
+-1 -3 0
+-2 -3 0
+```
+
+For n variables, this requires n(n-1)/2 clauses.
+
+### At-least-one constraints
+
+Express "at least one of these variables is true":
+
+```dimacs
+c At least one of {x1, x2, x3} is true
+1 2 3 0
+```
+
+This is just a single clause.
+
+### Exactly-one constraints
+
+Combine at-least-one and at-most-one:
+
+```dimacs
+c Exactly one of {x1, x2, x3} is true
+c At least one:
+1 2 3 0
+c At most one:
+-1 -2 0
+-1 -3 0
+-2 -3 0
+```
+
+### Implications
+
+Express "x1 implies x2" (x1 → x2):
+
+```dimacs
+c x1 → x2  is equivalent to  (¬x1 ∨ x2)
+-1 2 0
+```
+
+### Equivalences
+
+Express "x1 is equivalent to x2" (x1 ↔ x2):
+
+```dimacs
+c x1 ↔ x2  is  (x1 → x2) ∧ (x2 → x1)
+c x1 → x2:
+-1 2 0
+c x2 → x1:
+1 -2 0
+```
+
+## File extensions
+
+Common file extensions for DIMACS files:
+
+- `.cnf` - Standard DIMACS CNF file
+- `.cnf.gz` - Gzip-compressed DIMACS file
+- `.dimacs` - Alternative extension
+
+<Note>
+MiniSat automatically handles gzip-compressed files, so you can work with compressed problems without manual decompression.
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Parse error: Unexpected character">
+    **Cause**: Invalid character in file, usually from incorrect encoding or binary corruption.
+    
+    **Solution**: Ensure file is plain text (ASCII or UTF-8) without binary data.
+  </Accordion>
+  
+  <Accordion title="Variable number out of range">
+    **Cause**: Using variable 0 or negative variable numbers in literals.
+    
+    **Solution**: Variables must be positive integers starting from 1. Use negative for negation: `-5`, not `~5`.
+  </Accordion>
+  
+  <Accordion title="Missing clause terminator">
+    **Cause**: Clause doesn't end with 0.
+    
+    **Solution**: Every clause must end with a zero:
+    ```dimacs
+    1 2 3 0  ✓ Correct
+    1 2 3    ✗ Missing 0
+    ```
+  </Accordion>
+  
+  <Accordion title="Header mismatch warning">
+    **Cause**: Actual clause count doesn't match declared count in problem line.
+    
+    **Solution**: Update the problem line or use non-strict parsing. MiniSat can handle mismatches unless strict mode is enabled.
+  </Accordion>
+</AccordionGroup>
+
+## Tools and utilities
+
+<CardGroup cols={2}>
+  <Card title="CNF generators" icon="wand-magic-sparkles">
+    Tools to convert other formats to CNF:
+    - Boolean circuit to CNF
+    - SMT to CNF
+    - Constraint problems to CNF
+  </Card>
+  
+  <Card title="Problem libraries" icon="book">
+    Public SAT problem collections:
+    - SATLIB benchmark suite
+    - SAT Competition problems
+    - Industrial verification problems
+  </Card>
+  
+  <Card title="Visualization" icon="chart-network">
+    Tools to visualize CNF formulas:
+    - Clause-variable incidence graphs
+    - Variable interaction graphs
+  </Card>
+  
+  <Card title="Preprocessing" icon="gear">
+    CNF simplification tools:
+    - Remove tautologies
+    - Subsumption elimination
+    - Variable elimination
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="SAT solving" icon="puzzle-piece" href="/concepts/sat-solving">
+    Learn how MiniSat solves problems in DIMACS format
+  </Card>
+  
+  <Card title="Clauses" icon="brackets-square" href="/concepts/clauses">
+    Understand how DIMACS clauses are represented internally
+  </Card>
+  
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Try solving your first DIMACS problem
+  </Card>
+  
+  <Card title="API reference" icon="code" href="/api/solver">
+    Explore the solver API and parsing functions
+  </Card>
+</CardGroup>

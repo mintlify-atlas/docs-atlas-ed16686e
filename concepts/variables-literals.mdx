@@ -1,0 +1,343 @@
+---
+title: "Variables and literals"
+description: "How MiniSat represents and manipulates Boolean variables and literals"
+---
+
+## Variables
+
+In MiniSat, variables are the fundamental building blocks of Boolean formulas. They represent Boolean values that can be either true or false.
+
+### Variable representation
+
+Variables are represented as simple integers:
+
+```cpp SolverTypes.h
+typedef int Var;
+const Var var_Undef = -1;
+```
+
+<Info>
+Variables are just integers chosen from 0 to N-1, allowing them to be used directly as array indices for efficient access to variable-related data structures.
+</Info>
+
+### Creating variables
+
+You create new variables using the `newVar()` method:
+
+```cpp
+Solver solver;
+Var x = solver.newVar();  // Creates variable 0
+Var y = solver.newVar();  // Creates variable 1
+Var z = solver.newVar();  // Creates variable 2
+```
+
+<Note>
+Variables are numbered sequentially starting from 0. The solver maintains an internal counter for the next variable ID.
+</Note>
+
+### Variable properties
+
+Each variable can have associated properties:
+
+<AccordionGroup>
+  <Accordion title="Polarity">
+    The preferred truth value for branching decisions:
+    
+    ```cpp
+    solver.setPolarity(x, l_True);  // Prefer x = true
+    solver.setPolarity(y, l_False); // Prefer y = false
+    ```
+  </Accordion>
+  
+  <Accordion title="Decision variable">
+    Whether the variable can be used in decision branching:
+    
+    ```cpp
+    solver.setDecisionVar(x, true);  // x can be decided
+    solver.setDecisionVar(y, false); // y is determined by propagation
+    ```
+  </Accordion>
+  
+  <Accordion title="Activity">
+    A heuristic score that tracks variable importance:
+    
+    ```cpp
+    // Internal: activity is updated automatically
+    VMap<double> activity;  // Higher activity = more important
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Literals
+
+A literal is a variable or its negation. Literals are how variables appear in clauses.
+
+### Literal structure
+
+Literals are represented by a single integer that encodes both the variable and its sign:
+
+```cpp SolverTypes.h
+struct Lit {
+    int x;  // Encoded variable and sign
+    
+    bool operator == (Lit p) const { return x == p.x; }
+    bool operator != (Lit p) const { return x != p.x; }
+    bool operator <  (Lit p) const { return x < p.x; }
+};
+```
+
+<Tip>
+The encoding scheme uses the formula: `x = var * 2 + sign`
+
+This clever encoding makes positive and negative literals of the same variable adjacent in memory, which is efficient for various operations.
+</Tip>
+
+### Creating literals
+
+Use the `mkLit()` function to create literals:
+
+```cpp
+Var x = 0;
+
+// Create positive literal (x)
+Lit pos_x = mkLit(x, false);
+Lit pos_x = mkLit(x);  // Default is positive
+
+// Create negative literal (¬x)
+Lit neg_x = mkLit(x, true);
+```
+
+```cpp SolverTypes.h
+inline Lit mkLit(Var var, bool sign) {
+    Lit p;
+    p.x = var + var + (int)sign;
+    return p;
+}
+```
+
+### Literal operations
+
+MiniSat provides several operations for working with literals:
+
+<CodeGroup>
+
+```cpp Negation
+// Negate a literal using ~
+Lit p = mkLit(x, false);  // x
+Lit neg_p = ~p;           // ¬x
+
+// Implementation
+inline Lit operator ~(Lit p) {
+    Lit q;
+    q.x = p.x ^ 1;  // Flip the last bit
+    return q;
+}
+```
+
+```cpp Sign check
+// Check if literal is negative
+Lit p = mkLit(x, true);
+if (sign(p)) {
+    // p is negative
+}
+
+// Implementation
+inline bool sign(Lit p) {
+    return p.x & 1;  // Check last bit
+}
+```
+
+```cpp Variable extraction
+// Get the variable from a literal
+Lit p = mkLit(5, true);
+Var v = var(p);  // Returns 5
+
+// Implementation
+inline int var(Lit p) {
+    return p.x >> 1;  // Shift right to remove sign bit
+}
+```
+
+```cpp Conditional negation
+// Conditionally negate a literal
+Lit p = mkLit(x, false);
+Lit q = p ^ true;   // Negates p
+Lit r = p ^ false;  // Keeps p unchanged
+
+// Implementation
+inline Lit operator ^(Lit p, bool b) {
+    Lit q;
+    q.x = p.x ^ (unsigned int)b;
+    return q;
+}
+```
+
+</CodeGroup>
+
+### Special literal constants
+
+MiniSat defines special literal values:
+
+```cpp
+const Lit lit_Undef = { -2 };  // Undefined literal
+const Lit lit_Error = { -1 };  // Error indicator
+```
+
+<Warning>
+Do not create literals manually by setting the `x` field. Always use `mkLit()` to ensure correct encoding.
+</Warning>
+
+## Lifted booleans (lbool)
+
+MiniSat uses a three-valued logic system represented by the `lbool` type:
+
+```cpp SolverTypes.h
+class lbool {
+    uint8_t value;
+    
+public:
+    explicit lbool(uint8_t v) : value(v) { }
+    lbool() : value(0) { }  // Default is l_True
+    explicit lbool(bool x) : value(!x) { }
+};
+
+const lbool l_True  ((uint8_t)0);
+const lbool l_False ((uint8_t)1);
+const lbool l_Undef ((uint8_t)2);
+```
+
+### Using lbool
+
+<CodeGroup>
+
+```cpp Assignment queries
+// Check variable assignment
+lbool val = solver.value(x);
+
+if (val == l_True) {
+    // x is assigned true
+} else if (val == l_False) {
+    // x is assigned false
+} else {
+    // x is unassigned (l_Undef)
+}
+```
+
+```cpp Model values
+// After successful solve()
+if (solver.solve()) {
+    for (int i = 0; i < solver.nVars(); i++) {
+        lbool val = solver.modelValue(i);
+        printf("x%d = %s\n", i, 
+               val == l_True ? "true" : "false");
+    }
+}
+```
+
+```cpp Literal evaluation
+// Check literal value
+Lit lit = mkLit(x, true);  // ¬x
+lbool lit_val = solver.value(lit);
+
+// Implementation uses XOR for negation
+inline lbool Solver::value(Lit p) const {
+    return assigns[var(p)] ^ sign(p);
+}
+```
+
+</CodeGroup>
+
+### lbool operations
+
+The `lbool` type supports logical operations:
+
+```cpp
+lbool a = l_True;
+lbool b = l_False;
+lbool c = l_Undef;
+
+// Logical AND
+lbool result1 = a && b;  // l_False
+lbool result2 = a && c;  // l_Undef
+
+// Logical OR
+lbool result3 = a || b;  // l_True
+lbool result4 = b || c;  // l_Undef
+
+// XOR with boolean (negation)
+lbool result5 = a ^ true;  // Flip value
+```
+
+<Info>
+The three-valued logic allows MiniSat to represent partial assignments during the search process. Variables can be true, false, or not yet assigned.
+</Info>
+
+## Data structures
+
+MiniSat provides specialized map types for efficient variable and literal indexing:
+
+```cpp
+// Variable maps
+template<class T> class VMap : public IntMap<Var, T>{};
+
+// Literal maps
+template<class T> class LMap : public IntMap<Lit, T, MkIndexLit>{};
+
+// Literal sets
+class LSet : public IntSet<Lit, MkIndexLit>{};
+```
+
+### Example usage
+
+```cpp
+// Map from variables to doubles
+VMap<double> activity;
+activity[x] = 1.5;
+
+// Map from literals to assignment levels
+LMap<int> levels;
+levels[mkLit(x, false)] = 3;
+
+// Set of literals (e.g., for conflict clauses)
+LSet conflict;
+conflict.insert(mkLit(x, true));
+```
+
+<Tip>
+These specialized types use the integer representation of variables and literals for O(1) access time, making them much faster than hash tables for this use case.
+</Tip>
+
+## Conversion functions
+
+MiniSat provides functions to convert between different representations:
+
+```cpp
+// Variable to integer
+int toInt(Var v);  // Returns the variable number
+
+// Literal to integer
+int toInt(Lit p);  // Returns the encoded literal
+
+// Integer to literal
+Lit toLit(int i);  // Reconstructs literal from encoding
+
+// lbool conversions
+int toInt(lbool l);      // Convert to 0, 1, or 2
+lbool toLbool(int v);    // Convert from integer
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Clauses" icon="brackets-square" href="/concepts/clauses">
+    Learn how literals are combined into clauses
+  </Card>
+  
+  <Card title="SAT solving" icon="puzzle-piece" href="/concepts/sat-solving">
+    Understand how variables are assigned during solving
+  </Card>
+  
+  <Card title="DIMACS format" icon="file-lines" href="/concepts/dimacs-format">
+    See how variables are represented in input files
+  </Card>
+</CardGroup>

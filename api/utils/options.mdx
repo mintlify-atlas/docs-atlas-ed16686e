@@ -1,0 +1,438 @@
+---
+title: Options
+description: Command-line option parsing and management system for MiniSat
+---
+
+The Options module provides a comprehensive system for defining, parsing, and managing command-line options in MiniSat. It supports various option types including integers, doubles, strings, and booleans, with built-in range validation and help text generation.
+
+## Top-level functions
+
+### parseOptions
+
+```cpp
+void parseOptions(int& argc, char** argv, bool strict = false)
+```
+
+Parses command-line arguments and updates registered options.
+
+<ParamField path="argc" type="int&" required>
+  Reference to argument count, will be modified to reflect unparsed arguments
+</ParamField>
+
+<ParamField path="argv" type="char**" required>
+  Array of argument strings
+</ParamField>
+
+<ParamField path="strict" type="bool" default="false">
+  If true, exits on unrecognized options
+</ParamField>
+
+### printUsageAndExit
+
+```cpp
+void printUsageAndExit(int argc, char** argv, bool verbose = false)
+```
+
+Prints usage information for all registered options and exits the program.
+
+<ParamField path="argc" type="int" required>
+  Argument count
+</ParamField>
+
+<ParamField path="argv" type="char**" required>
+  Array of argument strings
+</ParamField>
+
+<ParamField path="verbose" type="bool" default="false">
+  If true, includes detailed descriptions for each option
+</ParamField>
+
+### setUsageHelp
+
+```cpp
+void setUsageHelp(const char* str)
+```
+
+Sets the usage help string displayed in help messages.
+
+<ParamField path="str" type="const char*" required>
+  Usage help string
+</ParamField>
+
+### setHelpPrefixStr
+
+```cpp
+void setHelpPrefixStr(const char* str)
+```
+
+Sets the prefix string displayed before option help.
+
+<ParamField path="str" type="const char*" required>
+  Help prefix string
+</ParamField>
+
+## Option base class
+
+### Option
+
+Abstract base class for all option types. Provides the interface for parsing and displaying help.
+
+<ResponseField name="name" type="const char*">
+  Option name (used on command line)
+</ResponseField>
+
+<ResponseField name="description" type="const char*">
+  Human-readable description
+</ResponseField>
+
+<ResponseField name="category" type="const char*">
+  Category for grouping options in help
+</ResponseField>
+
+<ResponseField name="type_name" type="const char*">
+  Type name displayed in help (e.g., `"<int32>"`, `"<double>"`)
+</ResponseField>
+
+#### Virtual methods
+
+```cpp
+virtual bool parse(const char* str) = 0
+virtual void help(bool verbose = false) = 0
+```
+
+## Range types
+
+### IntRange
+
+```cpp
+struct IntRange {
+    int begin;
+    int end;
+    IntRange(int b, int e);
+}
+```
+
+Defines a valid range for integer options.
+
+### Int64Range
+
+```cpp
+struct Int64Range {
+    int64_t begin;
+    int64_t end;
+    Int64Range(int64_t b, int64_t e);
+}
+```
+
+Defines a valid range for 64-bit integer options.
+
+### DoubleRange
+
+```cpp
+struct DoubleRange {
+    double begin;
+    double end;
+    bool begin_inclusive;
+    bool end_inclusive;
+    DoubleRange(double b, bool binc, double e, bool einc);
+}
+```
+
+Defines a valid range for double options with inclusive/exclusive bounds.
+
+<ResponseField name="begin_inclusive" type="bool">
+  Whether the lower bound is inclusive
+</ResponseField>
+
+<ResponseField name="end_inclusive" type="bool">
+  Whether the upper bound is inclusive
+</ResponseField>
+
+## IntOption
+
+32-bit integer option with range validation.
+
+### Constructor
+
+```cpp
+IntOption(const char* c, const char* n, const char* d, 
+          int32_t def = int32_t(), 
+          IntRange r = IntRange(INT32_MIN, INT32_MAX))
+```
+
+<ParamField path="c" type="const char*" required>
+  Category name for grouping
+</ParamField>
+
+<ParamField path="n" type="const char*" required>
+  Option name (used on command line)
+</ParamField>
+
+<ParamField path="d" type="const char*" required>
+  Description text
+</ParamField>
+
+<ParamField path="def" type="int32_t" default="0">
+  Default value
+</ParamField>
+
+<ParamField path="r" type="IntRange" default="IntRange(INT32_MIN, INT32_MAX)">
+  Valid range for the option
+</ParamField>
+
+### Usage
+
+```cpp
+// Define an option
+IntOption opt_restarts("CORE", "restarts", "Number of restarts", 100, IntRange(0, INT32_MAX));
+
+// Use as int
+int restarts = opt_restarts;
+
+// Assign new value
+opt_restarts = 200;
+```
+
+<Note>
+The option automatically validates that values are within the specified range. Out-of-range values will cause the program to exit with an error message.
+</Note>
+
+### Operators
+
+```cpp
+operator int32_t() const
+operator int32_t&()
+IntOption& operator=(int32_t x)
+```
+
+## Int64Option
+
+64-bit integer option with range validation. Not available on MSVC.
+
+### Constructor
+
+```cpp
+Int64Option(const char* c, const char* n, const char* d, 
+            int64_t def = int64_t(), 
+            Int64Range r = Int64Range(INT64_MIN, INT64_MAX))
+```
+
+<ParamField path="c" type="const char*" required>
+  Category name
+</ParamField>
+
+<ParamField path="n" type="const char*" required>
+  Option name
+</ParamField>
+
+<ParamField path="d" type="const char*" required>
+  Description
+</ParamField>
+
+<ParamField path="def" type="int64_t" default="0">
+  Default value
+</ParamField>
+
+<ParamField path="r" type="Int64Range" default="Int64Range(INT64_MIN, INT64_MAX)">
+  Valid range
+</ParamField>
+
+<Info>
+This class is disabled when compiling with Microsoft Visual C++ (`_MSC_VER`) due to lack of C99 support for `strtoll`.
+</Info>
+
+### Operators
+
+```cpp
+operator int64_t() const
+operator int64_t&()
+Int64Option& operator=(int64_t x)
+```
+
+## DoubleOption
+
+Floating-point option with range validation and inclusive/exclusive bounds.
+
+### Constructor
+
+```cpp
+DoubleOption(const char* c, const char* n, const char* d, 
+             double def = double(), 
+             DoubleRange r = DoubleRange(-HUGE_VAL, false, HUGE_VAL, false))
+```
+
+<ParamField path="c" type="const char*" required>
+  Category name
+</ParamField>
+
+<ParamField path="n" type="const char*" required>
+  Option name
+</ParamField>
+
+<ParamField path="d" type="const char*" required>
+  Description
+</ParamField>
+
+<ParamField path="def" type="double" default="0.0">
+  Default value
+</ParamField>
+
+<ParamField path="r" type="DoubleRange" default="DoubleRange(-HUGE_VAL, false, HUGE_VAL, false)">
+  Valid range with inclusive/exclusive bounds
+</ParamField>
+
+### Usage
+
+```cpp
+// Define option with exclusive range (0, 1)
+DoubleOption opt_decay("CORE", "var-decay", "Variable decay factor", 
+                       0.95, DoubleRange(0, false, 1, false));
+
+// Use as double
+double decay = opt_decay;
+
+// Assign new value
+opt_decay = 0.99;
+```
+
+### Operators
+
+```cpp
+operator double() const
+operator double&()
+DoubleOption& operator=(double x)
+```
+
+## StringOption
+
+String option for command-line string arguments.
+
+### Constructor
+
+```cpp
+StringOption(const char* c, const char* n, const char* d, const char* def = NULL)
+```
+
+<ParamField path="c" type="const char*" required>
+  Category name
+</ParamField>
+
+<ParamField path="n" type="const char*" required>
+  Option name
+</ParamField>
+
+<ParamField path="d" type="const char*" required>
+  Description
+</ParamField>
+
+<ParamField path="def" type="const char*" default="NULL">
+  Default value
+</ParamField>
+
+### Usage
+
+```cpp
+// Define option
+StringOption opt_output("OUTPUT", "output", "Output file name", "result.txt");
+
+// Use as string
+const char* filename = opt_output;
+
+// Assign new value
+opt_output = "new_output.txt";
+```
+
+### Operators
+
+```cpp
+operator const char*() const
+operator const char*&()
+StringOption& operator=(const char* x)
+```
+
+## BoolOption
+
+Boolean option with `-name` and `-no-name` syntax.
+
+### Constructor
+
+```cpp
+BoolOption(const char* c, const char* n, const char* d, bool v)
+```
+
+<ParamField path="c" type="const char*" required>
+  Category name
+</ParamField>
+
+<ParamField path="n" type="const char*" required>
+  Option name
+</ParamField>
+
+<ParamField path="d" type="const char*" required>
+  Description
+</ParamField>
+
+<ParamField path="v" type="bool" required>
+  Default value
+</ParamField>
+
+### Usage
+
+```cpp
+// Define option
+BoolOption opt_verbose("HELP", "verbose", "Verbose output", false);
+
+// Use as bool
+if (opt_verbose) {
+    printf("Verbose mode enabled\n");
+}
+
+// Assign new value
+opt_verbose = true;
+```
+
+<Note>
+Boolean options use special command-line syntax:
+- `-name` sets the option to true
+- `-no-name` sets the option to false
+</Note>
+
+### Operators
+
+```cpp
+operator bool() const
+operator bool&()
+BoolOption& operator=(bool b)
+```
+
+## Example usage
+
+```cpp
+#include "minisat/utils/Options.h"
+
+using namespace Minisat;
+
+// Define options
+IntOption    opt_verbosity("MAIN", "verb", "Verbosity level", 1, IntRange(0, 2));
+DoubleOption opt_timeout("MAIN", "timeout", "Time limit in seconds", 0.0, 
+                         DoubleRange(0, true, HUGE_VAL, false));
+BoolOption   opt_help("HELP", "help", "Print help message", false);
+StringOption opt_input("IO", "input", "Input file", NULL);
+
+int main(int argc, char** argv) {
+    setUsageHelp("USAGE: %s [options] <input-file>\n");
+    parseOptions(argc, argv, true);
+    
+    if (opt_help || argc < 2) {
+        printUsageAndExit(argc, argv, true);
+    }
+    
+    // Use options
+    int verbosity = opt_verbosity;
+    double timeout = opt_timeout;
+    bool help = opt_help;
+    const char* input = opt_input;
+    
+    return 0;
+}
+```

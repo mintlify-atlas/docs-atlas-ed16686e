@@ -1,0 +1,166 @@
+---
+title: "SAT solving"
+description: "Understanding the Boolean satisfiability problem and how MiniSat solves it"
+---
+
+## What is SAT solving?
+
+The Boolean satisfiability problem (SAT) is the problem of determining if there exists an assignment of truth values to variables that makes a Boolean formula evaluate to true. SAT is the first problem proven to be NP-complete, making it fundamentally important in computer science.
+
+<Info>
+SAT solvers like MiniSat are used in hardware verification, software testing, constraint solving, and many other applications where finding valid assignments to Boolean constraints is needed.
+</Info>
+
+## Problem structure
+
+A SAT problem consists of:
+
+- **Variables**: Boolean variables that can be true or false
+- **Literals**: A variable or its negation
+- **Clauses**: Disjunctions (OR) of literals
+- **Formula**: A conjunction (AND) of clauses (CNF form)
+
+### Example problem
+
+```
+(x1 ∨ x2 ∨ ¬x3) ∧ (¬x1 ∨ x3) ∧ (x2 ∨ ¬x3)
+```
+
+This formula has three clauses. The solver searches for an assignment to x1, x2, and x3 that makes all clauses true simultaneously.
+
+## How MiniSat works
+
+MiniSat uses the DPLL algorithm with modern enhancements:
+
+### Core algorithm steps
+
+<Steps>
+  <Step title="Unit propagation">
+    When a clause has only one unassigned literal, that literal must be true. MiniSat automatically assigns it and propagates consequences.
+  </Step>
+  
+  <Step title="Decision">
+    When no more unit propagations are possible, MiniSat picks an unassigned variable and assigns it a value based on heuristics.
+  </Step>
+  
+  <Step title="Conflict analysis">
+    If a conflict occurs (a clause becomes false), MiniSat analyzes the conflict to learn a new clause that prevents the same mistake.
+  </Step>
+  
+  <Step title="Backtracking">
+    After learning from a conflict, MiniSat backtracks to an earlier decision level and continues the search.
+  </Step>
+</Steps>
+
+### Key optimizations
+
+<AccordionGroup>
+  <Accordion title="Conflict-driven clause learning (CDCL)">
+    When conflicts occur, MiniSat learns new clauses that capture the reason for the conflict. These learned clauses guide future search and prevent repeating the same mistakes.
+    
+    ```cpp
+    // From Solver.h
+    void analyze(CRef confl, vec<Lit>& out_learnt, int& out_btlevel);
+    ```
+  </Accordion>
+  
+  <Accordion title="Variable activity heuristics">
+    MiniSat tracks variable activity and prioritizes variables that appear frequently in recent conflicts. This focuses the search on the most constrained parts of the problem.
+    
+    ```cpp
+    // From Solver.h
+    void varBumpActivity(Var v, double inc);
+    Heap<Var,VarOrderLt> order_heap;
+    ```
+  </Accordion>
+  
+  <Accordion title="Two-watched literals">
+    Instead of checking every clause after each assignment, MiniSat uses a watched literals scheme that only examines clauses when necessary, dramatically improving performance.
+    
+    ```cpp
+    // From Solver.h
+    struct Watcher {
+        CRef cref;
+        Lit  blocker;
+        Watcher(CRef cr, Lit p) : cref(cr), blocker(p) {}
+    };
+    ```
+  </Accordion>
+  
+  <Accordion title="Restart strategies">
+    MiniSat periodically restarts the search to escape from unproductive regions while keeping learned clauses. This prevents getting stuck in difficult parts of the search space.
+  </Accordion>
+</AccordionGroup>
+
+## Solver results
+
+When you call `solve()`, MiniSat returns one of three results:
+
+<CodeGroup>
+
+```cpp Satisfiable
+// Formula is satisfiable
+if (solver.solve()) {
+    // Access the model
+    for (int i = 0; i < solver.nVars(); i++) {
+        lbool val = solver.modelValue(i);
+        // val is l_True or l_False
+    }
+}
+```
+
+```cpp Unsatisfiable
+// Formula is unsatisfiable
+if (!solver.solve()) {
+    // No valid assignment exists
+    // Check solver.conflict for conflict clause
+}
+```
+
+```cpp Unknown
+// With resource limits
+lbool result = solver.solveLimited(assumptions);
+if (result == l_Undef) {
+    // Timeout or resource limit reached
+    // Cannot determine satisfiability
+}
+```
+
+</CodeGroup>
+
+<Note>
+The `lbool` type represents lifted booleans with three values: `l_True`, `l_False`, and `l_Undef`. This allows MiniSat to represent unknown or undefined states during the solving process.
+</Note>
+
+## Performance characteristics
+
+MiniSat is highly optimized for industrial SAT problems:
+
+- **Time complexity**: Exponential worst-case, but often polynomial in practice
+- **Space complexity**: Linear in the number of variables and clauses
+- **Learned clauses**: May grow significantly during solving
+- **Memory management**: Automatic garbage collection for deleted clauses
+
+<Tip>
+For large problems, consider using the SimpSolver variant which includes preprocessing and simplification techniques.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Variables and literals" icon="binary" href="/concepts/variables-literals">
+    Learn how variables and literals are represented in MiniSat
+  </Card>
+  
+  <Card title="Clauses" icon="brackets-square" href="/concepts/clauses">
+    Understand how clauses are stored and manipulated
+  </Card>
+  
+  <Card title="DIMACS format" icon="file-lines" href="/concepts/dimacs-format">
+    Learn the standard input format for SAT problems
+  </Card>
+  
+  <Card title="API reference" icon="code" href="/api/solver">
+    Explore the complete MiniSat API
+  </Card>
+</CardGroup>

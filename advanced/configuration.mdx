@@ -1,0 +1,293 @@
+---
+title: Configuration options
+description: Configure MiniSat's behavior with command-line options and API parameters
+---
+
+MiniSat provides extensive configuration options to fine-tune solver behavior. Options can be specified via command-line arguments or programmatically through the API.
+
+## Command-line options
+
+All command-line options follow the format `-option-name=value` for valued options or `-option-name`/`-no-option-name` for boolean flags.
+
+### Main options
+
+<ParamField path="verb" type="integer" default="1">
+  Verbosity level controlling output detail
+  
+  - `0`: Silent mode (no output)
+  - `1`: Some output (default)
+  - `2`: Detailed output with statistics
+</ParamField>
+
+<ParamField path="strict" type="boolean" default="false">
+  Validate DIMACS header during parsing
+  
+  Enable with `-strict`, disable with `-no-strict`
+</ParamField>
+
+### Core solver options
+
+<ParamField path="var-decay" type="double" default="0.95">
+  Variable activity decay factor
+  
+  Range: `(0, 1)` (exclusive)
+  
+  Controls how quickly variable activities decay. Higher values (closer to 1) decay more slowly, maintaining variable priorities longer.
+</ParamField>
+
+<ParamField path="cla-decay" type="double" default="0.999">
+  Clause activity decay factor
+  
+  Range: `(0, 1)` (exclusive)
+  
+  Controls how quickly clause activities decay. Affects learned clause deletion strategy.
+</ParamField>
+
+<ParamField path="rnd-freq" type="double" default="0">
+  Random variable selection frequency
+  
+  Range: `[0, 1]`
+  
+  Probability of choosing a random variable instead of using the activity heuristic. Set to 0 to disable randomization.
+</ParamField>
+
+<ParamField path="rnd-seed" type="double" default="91648253">
+  Random seed for variable selection
+  
+  Used when `rnd-freq > 0` or `rnd-init` is enabled.
+</ParamField>
+
+<ParamField path="ccmin-mode" type="integer" default="2">
+  Conflict clause minimization mode
+  
+  - `0`: No minimization
+  - `1`: Basic minimization
+  - `2`: Deep minimization (default)
+  
+  Higher values produce smaller learned clauses but require more computation.
+</ParamField>
+
+<ParamField path="phase-saving" type="integer" default="2">
+  Phase saving level
+  
+  - `0`: No phase saving
+  - `1`: Limited phase saving
+  - `2`: Full phase saving (default)
+  
+  Phase saving remembers previous variable assignments to guide future decisions.
+</ParamField>
+
+<ParamField path="rnd-init" type="boolean" default="false">
+  Randomize initial variable activities
+  
+  When enabled, variables start with small random activity values instead of zero.
+</ParamField>
+
+<ParamField path="luby" type="boolean" default="true">
+  Use Luby restart sequence
+  
+  Enable Luby restart sequence instead of geometric sequence. Luby restarts provide theoretical guarantees.
+</ParamField>
+
+<ParamField path="rfirst" type="integer" default="100">
+  Base restart interval
+  
+  Range: `[1, INT32_MAX]`
+  
+  Number of conflicts before first restart.
+</ParamField>
+
+<ParamField path="rinc" type="double" default="2">
+  Restart interval increase factor
+  
+  Range: `[1, ∞)`
+  
+  For geometric restarts (when Luby is disabled), multiply restart interval by this factor.
+</ParamField>
+
+<ParamField path="gc-frac" type="double" default="0.20">
+  Garbage collection memory fraction
+  
+  Range: `(0, ∞)`
+  
+  Trigger garbage collection when wasted memory exceeds this fraction of total memory.
+</ParamField>
+
+<ParamField path="min-learnts" type="integer" default="0">
+  Minimum learned clause limit
+  
+  Lower bound on the number of learned clauses to keep.
+</ParamField>
+
+## Preprocessing options
+
+<Info>
+  These options are only available when using `SimpSolver` (the simplifying solver).
+</Info>
+
+<ParamField path="pre" type="boolean" default="true">
+  Enable preprocessing
+  
+  Master switch for all preprocessing. Disable with `-no-pre` to skip variable elimination.
+</ParamField>
+
+<ParamField path="elim" type="boolean" default="true">
+  Perform variable elimination
+  
+  Enable bounded variable elimination during preprocessing.
+</ParamField>
+
+<ParamField path="asymm" type="boolean" default="false">
+  Shrink clauses by asymmetric branching
+  
+  More aggressive preprocessing that can reduce clause sizes.
+</ParamField>
+
+<ParamField path="rcheck" type="boolean" default="false">
+  Check if clauses are already implied
+  
+  <Warning>
+    This option is costly and subsumes subsumption checks.
+  </Warning>
+</ParamField>
+
+<ParamField path="grow" type="integer" default="0">
+  Clause growth limit for elimination
+  
+  Allow variable elimination to increase total clause count by this amount.
+</ParamField>
+
+<ParamField path="cl-lim" type="integer" default="20">
+  Resolvent clause length limit
+  
+  Range: `[-1, INT32_MAX]` (`-1` means no limit)
+  
+  Variables are not eliminated if resulting resolvent exceeds this length.
+</ParamField>
+
+<ParamField path="sub-lim" type="integer" default="1000">
+  Subsumption check size limit
+  
+  Range: `[-1, INT32_MAX]` (`-1` means no limit)
+  
+  Skip subsumption checks against clauses larger than this.
+</ParamField>
+
+<ParamField path="simp-gc-frac" type="double" default="0.5">
+  Garbage collection fraction during simplification
+  
+  Separate GC threshold used during preprocessing phase.
+</ParamField>
+
+## Programmatic configuration
+
+You can configure the solver through the API by setting public member variables:
+
+```cpp
+#include "minisat/core/Solver.h"
+
+Minisat::Solver solver;
+
+// Configure restart strategy
+solver.luby_restart = true;
+solver.restart_first = 100;
+solver.restart_inc = 2.0;
+
+// Configure phase saving
+solver.phase_saving = 2;
+
+// Configure variable/clause decay
+solver.var_decay = 0.95;
+solver.clause_decay = 0.999;
+
+// Configure conflict clause minimization
+solver.ccmin_mode = 2;
+
+// Add clauses and solve
+```
+
+<Tip>
+  For preprocessing options, use `SimpSolver` instead of `Solver`:
+  
+  ```cpp
+  #include "minisat/simp/SimpSolver.h"
+  
+  Minisat::SimpSolver solver;
+  solver.use_elim = true;
+  solver.clause_lim = 20;
+  ```
+</Tip>
+
+## Option categories
+
+Options are organized into logical categories:
+
+<Tabs>
+  <Tab title="Search heuristics">
+    Control how the solver makes branching decisions:
+    - `var-decay`: Variable activity decay
+    - `rnd-freq`: Random decision frequency
+    - `phase-saving`: Remember previous assignments
+    - `rnd-init`: Randomize initial activities
+  </Tab>
+  
+  <Tab title="Restart policy">
+    Configure when the solver restarts search:
+    - `luby`: Use Luby sequence
+    - `rfirst`: Initial restart interval
+    - `rinc`: Restart interval multiplier
+  </Tab>
+  
+  <Tab title="Clause learning">
+    Control learned clause generation and management:
+    - `cla-decay`: Clause activity decay
+    - `ccmin-mode`: Conflict clause minimization
+    - `min-learnts`: Minimum learned clauses to keep
+  </Tab>
+  
+  <Tab title="Preprocessing">
+    Simplify the problem before solving:
+    - `elim`: Variable elimination
+    - `asymm`: Asymmetric branching
+    - `cl-lim`: Resolvent length limit
+    - `sub-lim`: Subsumption size limit
+  </Tab>
+</Tabs>
+
+## Best practices
+
+<Note>
+  **Default settings work well for most problems**. Only adjust options if you have specific performance issues or domain knowledge.
+</Note>
+
+### When to adjust options
+
+- **Industrial instances**: Increase `phase-saving` to 2 (default) for structured problems
+- **Random instances**: Try `phase-saving = 0` and increased `rnd-freq`
+- **Large problems**: Increase `gc-frac` to reduce GC overhead
+- **Memory-constrained**: Decrease `gc-frac` and `min-learnts`
+
+### Debugging configurations
+
+Increase verbosity to understand solver behavior:
+
+```bash
+minisat -verb=2 input.cnf output.txt
+```
+
+This shows:
+- Problem statistics
+- Simplification results
+- Search progress
+- Restart and deletion events
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Resource limits" href="/advanced/resource-limits">
+    Set CPU and memory constraints
+  </Card>
+  <Card title="Preprocessing" href="/advanced/preprocessing">
+    Deep dive into simplification techniques
+  </Card>
+</CardGroup>

@@ -1,0 +1,352 @@
+---
+title: Resource limits
+description: Control CPU time and memory usage to prevent runaway solving
+---
+
+MiniSat provides mechanisms to limit resource consumption during solving. This is essential for real-world applications where unlimited solving time is impractical.
+
+## Command-line resource limits
+
+Resource limits can be set via command-line options when running the standalone solver.
+
+### CPU time limit
+
+<ParamField path="cpu-lim" type="integer" default="0">
+  CPU time limit in seconds
+  
+  Range: `[0, INT32_MAX]`
+  
+  - `0`: No limit (default)
+  - `> 0`: Terminate after specified seconds
+  
+  ```bash
+  minisat -cpu-lim=300 problem.cnf output.txt
+  ```
+  
+  The solver will stop after 300 seconds (5 minutes) and return `INDETERMINATE`.
+</ParamField>
+
+<Warning>
+  CPU time limits use operating system signals. On timeout, the solver terminates gracefully but may not complete all cleanup operations.
+</Warning>
+
+### Memory limit
+
+<ParamField path="mem-lim" type="integer" default="0">
+  Memory limit in megabytes
+  
+  Range: `[0, INT32_MAX]`
+  
+  - `0`: No limit (default)
+  - `> 0`: Limit memory usage to specified MB
+  
+  ```bash
+  minisat -mem-lim=2048 problem.cnf output.txt
+  ```
+  
+  The solver will stop if memory usage exceeds 2048 MB (2 GB).
+</ParamField>
+
+<Info>
+  Memory limits are enforced at the system level using `rlimit`. If the limit is exceeded, MiniSat catches the allocation failure and returns `INDETERMINATE`.
+</Info>
+
+## Programmatic resource limits
+
+When using MiniSat as a library, you have finer control over resource limits through the API.
+
+### Conflict budget
+
+Limit the number of conflicts before returning:
+
+```cpp
+#include "minisat/core/Solver.h"
+
+Minisat::Solver solver;
+
+// Add clauses...
+
+// Set conflict budget
+solver.setConfBudget(10000);
+
+// Solve with budget
+vec<Lit> assumptions;
+lbool result = solver.solveLimited(assumptions);
+
+if (result == l_Undef) {
+    // Budget exhausted
+    printf("Conflict budget reached\n");
+} else if (result == l_True) {
+    printf("SATISFIABLE\n");
+} else {
+    printf("UNSATISFIABLE\n");
+}
+```
+
+<ParamField path="setConfBudget" type="method">
+  Set conflict budget
+  
+  ```cpp
+  void setConfBudget(int64_t x)
+  ```
+  
+  - `x`: Maximum number of conflicts
+  - Budget is relative to current conflict count
+  - Use `budgetOff()` to disable
+</ParamField>
+
+### Propagation budget
+
+Limit the number of propagations:
+
+```cpp
+Minisat::Solver solver;
+
+// Set propagation budget
+solver.setPropBudget(1000000);
+
+vec<Lit> assumptions;
+lbool result = solver.solveLimited(assumptions);
+
+if (result == l_Undef) {
+    printf("Propagation budget reached\n");
+}
+```
+
+<ParamField path="setPropBudget" type="method">
+  Set propagation budget
+  
+  ```cpp
+  void setPropBudget(int64_t x)
+  ```
+  
+  - `x`: Maximum number of propagations
+  - Budget is relative to current propagation count
+  - Finer-grained control than conflict budget
+</ParamField>
+
+### Disabling budgets
+
+```cpp
+// Remove all budgets
+solver.budgetOff();
+
+// Now solve() calls have no resource limits
+bool result = solver.solve();
+```
+
+<Note>
+  The `solve()` methods (without "Limited" suffix) automatically call `budgetOff()` before solving. Use `solveLimited()` to respect budgets.
+</Note>
+
+## Asynchronous interruption
+
+For long-running solves, you can interrupt from another thread:
+
+```cpp
+#include <thread>
+#include "minisat/core/Solver.h"
+
+Minisat::Solver solver;
+
+// Start solving in background
+std::thread solver_thread([&]() {
+    vec<Lit> assumptions;
+    lbool result = solver.solveLimited(assumptions);
+    // Handle result...
+});
+
+// Wait for some condition...
+std::this_thread::sleep_for(std::chrono::seconds(5));
+
+// Interrupt solving
+solver.interrupt();
+
+// Wait for solver to stop
+solver_thread.join();
+
+// Clear interrupt flag for future use
+solver.clearInterrupt();
+```
+
+<ParamField path="interrupt" type="method">
+  Trigger asynchronous interruption
+  
+  ```cpp
+  void interrupt()
+  ```
+  
+  - Sets internal flag checked during search
+  - Solver stops and returns `l_Undef`
+  - Thread-safe: can be called from signal handlers
+</ParamField>
+
+<ParamField path="clearInterrupt" type="method">
+  Clear interrupt flag
+  
+  ```cpp
+  void clearInterrupt()
+  ```
+  
+  - Resets interrupt flag
+  - Call before next `solve()` invocation
+</ParamField>
+
+## Combining limits
+
+You can combine multiple limit types:
+
+```cpp
+Minisat::Solver solver;
+
+// Set multiple limits
+solver.setConfBudget(50000);   // Max 50k conflicts
+solver.setPropBudget(10000000); // Max 10M propagations
+
+// Setup interrupt handler
+std::signal(SIGINT, [](int) {
+    solver.interrupt();
+});
+
+vec<Lit> assumptions;
+lbool result = solver.solveLimited(assumptions);
+
+if (result == l_Undef) {
+    // One of the limits was reached
+    printf("Resource limit reached\n");
+    printf("Conflicts: %lld\n", solver.conflicts);
+    printf("Propagations: %lld\n", solver.propagations);
+}
+```
+
+<Tip>
+  The solver stops as soon as **any** limit is reached. Check the statistics to determine which limit triggered termination.
+</Tip>
+
+## Return values and budgets
+
+Understanding return values when using budgets:
+
+<Tabs>
+  <Tab title="l_True">
+    **Satisfiable**
+    
+    - A satisfying assignment was found
+    - Result is definitive
+    - Budget was not reached
+    - Model available in `solver.model`
+  </Tab>
+  
+  <Tab title="l_False">
+    **Unsatisfiable**
+    
+    - Problem is provably unsatisfiable
+    - Result is definitive
+    - Budget was not reached
+    - Conflict clause available in `solver.conflict`
+  </Tab>
+  
+  <Tab title="l_Undef">
+    **Indeterminate**
+    
+    - Budget or limit was reached
+    - Or interrupt was triggered
+    - Result is inconclusive
+    - Problem may be SAT or UNSAT
+    - No model or conflict available
+  </Tab>
+</Tabs>
+
+## Practical examples
+
+### Portfolio solving with timeouts
+
+```cpp
+#include "minisat/core/Solver.h"
+
+void try_configuration(Minisat::Solver& solver, 
+                       const char* name,
+                       int conflicts) {
+    solver.setConfBudget(conflicts);
+    
+    vec<Lit> assumptions;
+    lbool result = solver.solveLimited(assumptions);
+    
+    if (result != l_Undef) {
+        printf("Config %s solved it!\n", name);
+    }
+}
+
+Minisat::Solver s1, s2, s3;
+
+// Load problem into all solvers...
+
+// Try different configurations with budgets
+try_configuration(s1, "aggressive", 10000);
+try_configuration(s2, "conservative", 10000);
+try_configuration(s3, "random", 10000);
+```
+
+### Incremental solving with time slices
+
+```cpp
+Minisat::Solver solver;
+
+// Add initial clauses...
+
+// Solve in time slices
+for (int round = 0; round < 10; round++) {
+    solver.setConfBudget(5000); // 5k conflicts per round
+    
+    vec<Lit> assumptions;
+    lbool result = solver.solveLimited(assumptions);
+    
+    if (result != l_Undef) {
+        printf("Solved in round %d\n", round);
+        break;
+    }
+    
+    printf("Round %d: %lld conflicts\n", round, solver.conflicts);
+}
+```
+
+## Statistics for monitoring
+
+Track resource usage through statistics:
+
+```cpp
+Minisat::Solver solver;
+
+vec<Lit> assumptions;
+lbool result = solver.solveLimited(assumptions);
+
+// Check statistics
+printf("Conflicts: %lld\n", solver.conflicts);
+printf("Propagations: %lld\n", solver.propagations);
+printf("Decisions: %lld\n", solver.decisions);
+printf("Random decisions: %lld\n", solver.rnd_decisions);
+printf("Restarts: %lld\n", solver.starts);
+```
+
+<Info>
+  All statistics are cumulative across multiple `solve()` calls. They are never reset unless you create a new solver instance.
+</Info>
+
+## Best practices
+
+1. **Start with conflict budgets**: Easier to estimate than propagations or time
+2. **Use solveLimited()**: Regular `solve()` ignores budgets
+3. **Clear interrupts**: Always call `clearInterrupt()` after handling an interrupt
+4. **Monitor statistics**: Use statistics to calibrate budgets
+5. **Handle l_Undef gracefully**: Always check for indeterminate results
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Configuration" href="/advanced/configuration">
+    Tune solver parameters for better performance
+  </Card>
+  <Card title="Performance" href="/advanced/performance">
+    Optimize solving speed
+  </Card>
+</CardGroup>

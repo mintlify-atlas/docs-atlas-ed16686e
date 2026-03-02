@@ -1,0 +1,133 @@
+---
+title: Introduction to MiniSat
+description: A minimalistic and high-performance SAT solver library for solving Boolean satisfiability problems
+---
+
+## What is MiniSat?
+
+MiniSat is a minimalistic, open-source SAT solver that has become one of the most influential tools in the Boolean satisfiability (SAT) solving community. Despite its small codebase, MiniSat delivers exceptional performance and has served as the foundation for numerous state-of-the-art SAT solvers.
+
+<CardGroup cols={2}>
+  <Card title="Core solver" icon="microchip" href="/api/solver">
+    A streamlined SAT solver with essential conflict-driven clause learning (CDCL) algorithm
+  </Card>
+  <Card title="Simplified solver" icon="wand-magic-sparkles" href="/api/simp-solver">
+    Extended solver with variable elimination and preprocessing capabilities
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Get up and running with MiniSat in minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Build and install MiniSat from source using Make or CMake
+  </Card>
+</CardGroup>
+
+## Key features
+
+### Performance and efficiency
+
+<AccordionGroup>
+  <Accordion title="Conflict-driven clause learning (CDCL)">
+    MiniSat implements the modern CDCL algorithm with efficient data structures for clause management and propagation.
+  </Accordion>
+  
+  <Accordion title="Phase-saving heuristics">
+    Intelligent decision heuristics that remember variable polarities across restarts for improved performance.
+  </Accordion>
+  
+  <Accordion title="Blocking literals">
+    Optimized unit propagation using blocking literals to avoid unnecessary clause memory accesses.
+  </Accordion>
+  
+  <Accordion title="Luby restarts">
+    Configurable restart strategies including the Luby sequence for balanced exploration.
+  </Accordion>
+</AccordionGroup>
+
+### Advanced capabilities
+
+- **Variable elimination**: Preprocessing through variable elimination for problem simplification
+- **Incremental solving**: Add clauses incrementally and resolve with assumptions
+- **Resource controls**: CPU time, memory, and conflict/decision limits
+- **Asynchronous interruption**: Interrupt solving from another thread or signal handler
+- **Model extraction**: Extract satisfying assignments when problems are satisfiable
+
+## Architecture overview
+
+MiniSat is organized into several key modules:
+
+<Steps>
+  <Step title="Mini Template Library (MTL)">
+    Location: `minisat/mtl/`
+    
+    Custom template library providing efficient data structures:
+    - Vectors and heaps
+    - Hash maps and sets
+    - Memory allocators
+    - Sorting algorithms
+  </Step>
+  
+  <Step title="Utilities">
+    Location: `minisat/utils/`
+    
+    Generic helper code for:
+    - I/O operations and DIMACS parsing
+    - CPU time measurement
+    - Command-line option handling
+    - System resource management
+  </Step>
+  
+  <Step title="Core solver">
+    Location: `minisat/core/`
+    
+    The essential SAT solver implementation:
+    - `Solver.h/cc`: Main solver class with CDCL algorithm
+    - `SolverTypes.h`: Variables, literals, clauses, and lifted booleans
+    - `Dimacs.h`: DIMACS format parser
+  </Step>
+  
+  <Step title="Simplified solver">
+    Location: `minisat/simp/`
+    
+    Extended solver with preprocessing:
+    - `SimpSolver.h/cc`: Solver with variable elimination
+    - Additional simplification and subsumption techniques
+  </Step>
+</Steps>
+
+## Version information
+
+<Note>
+MiniSat 2.2.0 includes several important improvements over version 2.0:
+- Phase-saving and Luby restart heuristics
+- Out-of-memory detection and handling
+- Resource controls for CPU time, memory, and conflicts
+- Asynchronous interruption support
+- Improved 64-bit memory efficiency with region-based clause allocator
+- Blocking literals for faster unit propagation
+</Note>
+
+## Use cases
+
+MiniSat is ideal for:
+
+- **Formal verification**: Hardware and software verification tools
+- **Planning and scheduling**: AI planning systems and resource scheduling
+- **Combinatorial optimization**: Solving complex constraint satisfaction problems
+- **Research and education**: Learning SAT solving algorithms and techniques
+- **Building custom solvers**: Foundation for domain-specific SAT solvers
+
+## License
+
+MiniSat is released under the MIT License, making it free for both academic and commercial use.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install MiniSat" icon="download" href="/installation">
+    Build from source with detailed instructions
+  </Card>
+  <Card title="Start solving" icon="play" href="/quickstart">
+    Write your first SAT solving program
+  </Card>
+</CardGroup>

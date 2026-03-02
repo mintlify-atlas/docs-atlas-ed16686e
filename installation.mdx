@@ -1,0 +1,382 @@
+---
+title: Installation
+description: Build and install MiniSat from source using Make or CMake
+---
+
+## Prerequisites
+
+Before building MiniSat, ensure you have the following installed:
+
+- C++ compiler with C++11 support (GCC 4.8+, Clang 3.4+, or MSVC 2015+)
+- GNU Make or CMake (version 2.6 or higher)
+- zlib development library
+
+<CodeGroup>
+```bash Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install build-essential zlib1g-dev
+```
+
+```bash Fedora/RHEL
+sudo dnf install gcc-c++ make zlib-devel
+```
+
+```bash macOS
+brew install zlib
+# Xcode Command Line Tools include make and clang
+xcode-select --install
+```
+</CodeGroup>
+
+## Building with Make
+
+MiniSat uses a flexible Makefile-based build system with multiple configuration options.
+
+### Quick installation
+
+The simplest approach uses GNU standard locations with a prefix:
+
+<Steps>
+  <Step title="Configure the installation prefix">
+    ```bash
+    cd minisat
+    make config prefix=/usr/local
+    ```
+    
+    Replace `/usr/local` with your preferred installation directory.
+  </Step>
+  
+  <Step title="Build and install">
+    ```bash
+    make install
+    ```
+    
+    This builds the release version and installs binaries, libraries, and headers.
+  </Step>
+</Steps>
+
+<Tip>
+You can combine multiple configuration options in a single command:
+```bash
+make config prefix=$HOME/.local BUILD_DIR=build/release
+```
+</Tip>
+
+### Build targets
+
+MiniSat provides multiple build configurations:
+
+<Tabs>
+  <Tab title="Release builds">
+    ```bash
+    make r    # Release binary (minisat)
+    make cr   # Core solver binary (minisat_core)
+    make lr   # Static library (libminisat.a)
+    make lsh  # Shared library (libminisat.so)
+    ```
+    
+    Release builds are optimized with `-O3 -DNDEBUG` flags.
+  </Tab>
+  
+  <Tab title="Debug builds">
+    ```bash
+    make d    # Debug binary
+    make cd   # Core solver debug binary
+    make ld   # Static library (debug)
+    ```
+    
+    Debug builds include symbols with `-O0 -DDEBUG -g` flags.
+  </Tab>
+  
+  <Tab title="Profile builds">
+    ```bash
+    make p    # Profile binary
+    make cp   # Core solver profile binary
+    make lp   # Static library (profile)
+    ```
+    
+    Profile builds are optimized with profiling support (`-pg` flag).
+  </Tab>
+  
+  <Tab title="Dynamic builds">
+    ```bash
+    make sh   # Dynamic binary
+    make csh  # Core solver dynamic binary
+    ```
+    
+    Dynamic builds link against shared libraries with `-fpic` flag.
+  </Tab>
+</Tabs>
+
+<Info>
+The default `make all` target builds the release binary, static library, and shared library.
+</Info>
+
+### Configuration options
+
+Customize the build by modifying these variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BUILD_DIR` | `build` | Directory for object files and binaries |
+| `MINISAT_REL` | `-O3 -DNDEBUG` | Release build flags |
+| `MINISAT_DEB` | `-O0 -DDEBUG` | Debug build flags |
+| `MINISAT_RELSYM` | `-g` | Include debug symbols in release |
+| `prefix` | `/usr/local` | Installation root directory |
+| `includedir` | `$(prefix)/include` | Header installation directory |
+| `bindir` | `$(prefix)/bin` | Binary installation directory |
+| `libdir` | `$(prefix)/lib` | Library installation directory |
+
+<Note>
+The configuration is stored in `config.mk`. To reset to defaults, run:
+```bash
+make distclean
+```
+</Note>
+
+### Installing specific components
+
+You can install individual components:
+
+```bash
+make install-headers  # Install header files only
+make install-lib      # Install libraries only
+make install-bin      # Install binaries only
+make install-debug    # Install debug libraries and headers
+```
+
+## Building with CMake
+
+CMake provides a cross-platform alternative to Make:
+
+<Steps>
+  <Step title="Create a build directory">
+    ```bash
+    cd minisat
+    mkdir build && cd build
+    ```
+  </Step>
+  
+  <Step title="Configure with CMake">
+    ```bash
+    cmake ..
+    ```
+    
+    Or specify options:
+    ```bash
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DSTATIC_BINARIES=ON \
+          ..
+    ```
+  </Step>
+  
+  <Step title="Build the project">
+    ```bash
+    cmake --build .
+    ```
+    
+    Or use make directly:
+    ```bash
+    make -j$(nproc)
+    ```
+  </Step>
+  
+  <Step title="Install (optional)">
+    ```bash
+    sudo cmake --install .
+    ```
+    
+    Or:
+    ```bash
+    sudo make install
+    ```
+  </Step>
+</Steps>
+
+### CMake options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `CMAKE_BUILD_TYPE` | `Release` | Build type: `Release`, `Debug`, `RelWithDebInfo` |
+| `STATIC_BINARIES` | `ON` | Link binaries statically |
+| `USE_SORELEASE` | `ON` | Use SORELEASE in shared library filename |
+| `CMAKE_INSTALL_PREFIX` | `/usr/local` | Installation prefix |
+
+<CodeGroup>
+```bash Release build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+```
+
+```bash Debug build
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+```
+
+```bash Custom install prefix
+cmake -DCMAKE_INSTALL_PREFIX=$HOME/.local ..
+```
+
+```bash Dynamic linking
+cmake -DSTATIC_BINARIES=OFF ..
+```
+</CodeGroup>
+
+## Build artifacts
+
+After building, you'll find:
+
+### Executables
+
+- **`minisat`** or **`minisat_simp`**: Full solver with preprocessing
+  - Location (Make): `build/release/bin/minisat`
+  - Location (CMake): `build/minisat_simp`
+
+- **`minisat_core`**: Core solver without simplification
+  - Location (Make): `build/release/bin/minisat_core`
+  - Location (CMake): `build/minisat_core`
+
+### Libraries
+
+- **Static library**: `libminisat.a`
+  - Location (Make): `build/release/lib/libminisat.a`
+  - Location (CMake): `build/libminisat.a`
+
+- **Shared library**: `libminisat.so.2.1.0` (Linux) or `libminisat.dylib` (macOS)
+  - Location (Make): `build/dynamic/lib/`
+  - Location (CMake): `build/`
+
+### Headers
+
+Installed to `$(includedir)/minisat/` with the following structure:
+```
+minisat/
+├── core/
+│   ├── Solver.h
+│   ├── SolverTypes.h
+│   └── Dimacs.h
+├── simp/
+│   └── SimpSolver.h
+├── mtl/
+│   ├── Vec.h
+│   ├── Heap.h
+│   ├── Map.h
+│   └── ...
+└── utils/
+    ├── Options.h
+    ├── System.h
+    └── ParseUtils.h
+```
+
+## Verifying the installation
+
+Test your installation:
+
+<Steps>
+  <Step title="Check the binary">
+    ```bash
+    minisat --help
+    ```
+    
+    You should see usage information and available options.
+  </Step>
+  
+  <Step title="Test with a simple CNF file">
+    Create a test CNF file `test.cnf`:
+    ```
+    p cnf 3 2
+    1 -3 0
+    2 3 -1 0
+    ```
+    
+    Run the solver:
+    ```bash
+    minisat test.cnf result.txt
+    ```
+    
+    Check the result:
+    ```bash
+    cat result.txt
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+If you installed to a non-standard prefix, you may need to update your environment:
+```bash
+export PATH=$PREFIX/bin:$PATH
+export LD_LIBRARY_PATH=$PREFIX/lib:$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=$PREFIX/include:$CPLUS_INCLUDE_PATH
+```
+</Warning>
+
+## Cleaning build files
+
+<Tabs>
+  <Tab title="Make">
+    ```bash
+    make clean      # Remove build artifacts
+    make distclean  # Remove build artifacts and config.mk
+    ```
+  </Tab>
+  
+  <Tab title="CMake">
+    ```bash
+    rm -rf build/
+    ```
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="zlib not found">
+    Install the zlib development package:
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get install zlib1g-dev
+    
+    # Fedora/RHEL
+    sudo dnf install zlib-devel
+    
+    # macOS
+    brew install zlib
+    ```
+  </Accordion>
+  
+  <Accordion title="Compiler not found">
+    Install a C++ compiler:
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get install build-essential
+    
+    # Fedora/RHEL
+    sudo dnf groupinstall "Development Tools"
+    
+    # macOS
+    xcode-select --install
+    ```
+  </Accordion>
+  
+  <Accordion title="Permission denied during install">
+    Use `sudo` for system-wide installation or choose a user-writable prefix:
+    ```bash
+    make config prefix=$HOME/.local
+    make install
+    ```
+  </Accordion>
+  
+  <Accordion title="Library not found when running minisat">
+    Update your library path:
+    ```bash
+    export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    ```
+    
+    Or add to `/etc/ld.so.conf.d/` and run `sudo ldconfig`.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<Card title="Quick start guide" icon="rocket" href="/quickstart">
+  Learn how to use MiniSat to solve SAT problems in C++
+</Card>

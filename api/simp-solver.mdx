@@ -1,0 +1,402 @@
+---
+title: SimpSolver
+description: Extended solver with variable elimination and simplification preprocessing
+---
+
+The `SimpSolver` class extends the core `Solver` with variable elimination and formula simplification capabilities. It implements preprocessing techniques including variable elimination, subsumption, and asymmetric branching to simplify the CNF formula before solving.
+
+## Constructor and destructor
+
+### SimpSolver()
+
+Creates a new simplifying solver instance.
+
+```cpp
+SimpSolver();
+```
+
+### ~SimpSolver()
+
+Destructor for cleanup.
+
+```cpp
+~SimpSolver();
+```
+
+## Problem specification
+
+### newVar()
+
+Adds a new variable to the solver.
+
+```cpp
+Var newVar(lbool upol = l_Undef, bool dvar = true);
+```
+
+<ParamField path="upol" type="lbool" default="l_Undef">
+  User preferred polarity for the variable.
+</ParamField>
+
+<ParamField path="dvar" type="bool" default="true">
+  Whether the variable should be a decision variable.
+</ParamField>
+
+<ResponseField name="return" type="Var">
+  The newly created variable identifier.
+</ResponseField>
+
+### releaseVar()
+
+Releases a variable from the solver.
+
+```cpp
+void releaseVar(Lit l);
+```
+
+<ParamField path="l" type="Lit" required>
+  The literal to release.
+</ParamField>
+
+### addClause()
+
+Adds a clause to the solver. Multiple overloads available.
+
+```cpp
+bool addClause(const vec<Lit>& ps);
+bool addClause(Lit p);
+bool addClause(Lit p, Lit q);
+bool addClause(Lit p, Lit q, Lit r);
+bool addClause(Lit p, Lit q, Lit r, Lit s);
+```
+
+<ParamField path="ps" type="const vec<Lit>&">
+  Vector of literals forming the clause.
+</ParamField>
+
+<ParamField path="p" type="Lit">
+  First literal.
+</ParamField>
+
+<ParamField path="q" type="Lit">
+  Second literal.
+</ParamField>
+
+<ParamField path="r" type="Lit">
+  Third literal.
+</ParamField>
+
+<ParamField path="s" type="Lit">
+  Fourth literal.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `false` if the clause makes the formula unsatisfiable, `true` otherwise.
+</ResponseField>
+
+### addEmptyClause()
+
+Adds the empty clause to the solver.
+
+```cpp
+bool addEmptyClause();
+```
+
+<ResponseField name="return" type="bool">
+  Returns `false` (makes the formula unsatisfiable).
+</ResponseField>
+
+### addClause_()
+
+Adds a clause without making an internal copy.
+
+```cpp
+bool addClause_(vec<Lit>& ps);
+```
+
+<ParamField path="ps" type="vec<Lit>&" required>
+  Vector of literals that will be modified.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `false` if unsatisfiable, `true` otherwise.
+</ResponseField>
+
+### substitute()
+
+Replaces all occurrences of a variable with a literal.
+
+```cpp
+bool substitute(Var v, Lit x);
+```
+
+<ParamField path="v" type="Var" required>
+  Variable to replace.
+</ParamField>
+
+<ParamField path="x" type="Lit" required>
+  Literal to substitute in place of the variable.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `false` if substitution causes a contradiction, `true` otherwise.
+</ResponseField>
+
+<Warning>
+  This operation may cause the formula to become unsatisfiable.
+</Warning>
+
+## Variable mode
+
+### setFrozen()
+
+Sets whether a variable can be eliminated.
+
+```cpp
+void setFrozen(Var v, bool b);
+```
+
+<ParamField path="v" type="Var" required>
+  Variable to configure.
+</ParamField>
+
+<ParamField path="b" type="bool" required>
+  If `true`, the variable will not be eliminated during preprocessing.
+</ParamField>
+
+<Note>
+  Frozen variables are protected from elimination but can still be assigned and used in solving.
+</Note>
+
+### isEliminated()
+
+Checks if a variable has been eliminated.
+
+```cpp
+bool isEliminated(Var v) const;
+```
+
+<ParamField path="v" type="Var" required>
+  Variable to check.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `true` if the variable has been eliminated, `false` otherwise.
+</ResponseField>
+
+### freezeVar()
+
+Freezes a variable so it will not be eliminated.
+
+```cpp
+void freezeVar(Var v);
+```
+
+<ParamField path="v" type="Var" required>
+  Variable to freeze.
+</ParamField>
+
+<Note>
+  This is an alternative interface to `setFrozen()` that only freezes variables.
+</Note>
+
+### thaw()
+
+Thaws all frozen variables.
+
+```cpp
+void thaw();
+```
+
+<Note>
+  After calling this method, previously frozen variables may be eliminated in subsequent simplification.
+</Note>
+
+## Solving
+
+### solve()
+
+Searches for a satisfying assignment with optional simplification.
+
+```cpp
+bool solve(bool do_simp = true, bool turn_off_simp = false);
+bool solve(Lit p, bool do_simp = true, bool turn_off_simp = false);
+bool solve(Lit p, Lit q, bool do_simp = true, bool turn_off_simp = false);
+bool solve(Lit p, Lit q, Lit r, bool do_simp = true, bool turn_off_simp = false);
+bool solve(const vec<Lit>& assumps, bool do_simp = true, bool turn_off_simp = false);
+```
+
+<ParamField path="p" type="Lit">
+  First assumption literal.
+</ParamField>
+
+<ParamField path="q" type="Lit">
+  Second assumption literal.
+</ParamField>
+
+<ParamField path="r" type="Lit">
+  Third assumption literal.
+</ParamField>
+
+<ParamField path="assumps" type="const vec<Lit>&">
+  Vector of assumption literals.
+</ParamField>
+
+<ParamField path="do_simp" type="bool" default="true">
+  Whether to perform simplification before solving.
+</ParamField>
+
+<ParamField path="turn_off_simp" type="bool" default="false">
+  Whether to disable simplification after this solve call.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `true` if satisfiable, `false` otherwise.
+</ResponseField>
+
+<Note>
+  Setting `do_simp=true` will run variable elimination and other preprocessing techniques before the main search.
+</Note>
+
+### solveLimited()
+
+Searches with resource constraints and optional simplification.
+
+```cpp
+lbool solveLimited(const vec<Lit>& assumps, bool do_simp = true, bool turn_off_simp = false);
+```
+
+<ParamField path="assumps" type="const vec<Lit>&" required>
+  Vector of assumption literals.
+</ParamField>
+
+<ParamField path="do_simp" type="bool" default="true">
+  Whether to perform simplification.
+</ParamField>
+
+<ParamField path="turn_off_simp" type="bool" default="false">
+  Whether to disable simplification after this call.
+</ParamField>
+
+<ResponseField name="return" type="lbool">
+  Returns `l_True` if satisfiable, `l_False` if unsatisfiable, `l_Undef` if interrupted.
+</ResponseField>
+
+### eliminate()
+
+Performs variable elimination based simplification.
+
+```cpp
+bool eliminate(bool turn_off_elim = false);
+```
+
+<ParamField path="turn_off_elim" type="bool" default="false">
+  Whether to disable elimination after this call.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Returns `false` if the formula becomes unsatisfiable during elimination, `true` otherwise.
+</ResponseField>
+
+<Note>
+  This method eliminates variables by resolution when it does not significantly increase formula size.
+</Note>
+
+## Memory management
+
+### garbageCollect()
+
+Performs garbage collection on internal storage.
+
+```cpp
+virtual void garbageCollect();
+```
+
+<Note>
+  This overrides the base `Solver` method to handle additional data structures used for simplification.
+</Note>
+
+## Configuration parameters
+
+### Elimination and simplification options
+
+<ParamField path="grow" type="int" default="0">
+  Allows a variable elimination step to grow the formula by this many clauses.
+</ParamField>
+
+<ParamField path="clause_lim" type="int" default="-1">
+  Variables are not eliminated if resolution produces a clause longer than this limit. Set to -1 for no limit.
+</ParamField>
+
+<ParamField path="subsumption_lim" type="int" default="-1">
+  Do not check subsumption against clauses larger than this. Set to -1 for no limit.
+</ParamField>
+
+<ParamField path="simp_garbage_frac" type="double">
+  Garbage collection threshold during simplification (distinct from normal solving).
+</ParamField>
+
+### Feature flags
+
+<ParamField path="use_asymm" type="bool">
+  Enable asymmetric branching to shrink clauses.
+</ParamField>
+
+<ParamField path="use_rcheck" type="bool">
+  Enable redundancy checking (checks if a clause is already implied). Expensive but powerful.
+</ParamField>
+
+<ParamField path="use_elim" type="bool">
+  Enable variable elimination.
+</ParamField>
+
+<ParamField path="extend_model" type="bool">
+  Flag indicating whether the user needs to access the full model including eliminated variables.
+</ParamField>
+
+<Note>
+  If `extend_model` is false, the model will only contain values for non-eliminated variables.
+</Note>
+
+## Statistics
+
+<ResponseField name="merges" type="int">
+  Number of clause merges performed during variable elimination.
+</ResponseField>
+
+<ResponseField name="asymm_lits" type="int">
+  Number of literals removed by asymmetric branching.
+</ResponseField>
+
+<ResponseField name="eliminated_vars" type="int">
+  Total number of variables eliminated by preprocessing.
+</ResponseField>
+
+## Usage example
+
+```cpp
+SimpSolver solver;
+
+// Create variables
+Var a = solver.newVar();
+Var b = solver.newVar();
+Var c = solver.newVar();
+
+// Add clauses
+solver.addClause(mkLit(a), mkLit(b));
+solver.addClause(mkLit(a, true), mkLit(c));
+solver.addClause(mkLit(b, true), mkLit(c, true));
+
+// Freeze important variables if needed
+solver.freezeVar(a);
+
+// Solve with simplification
+if (solver.solve(true, false)) {
+    // Access model
+    lbool val_a = solver.modelValue(a);
+    lbool val_b = solver.modelValue(b);
+    lbool val_c = solver.modelValue(c);
+}
+
+// Thaw variables for future elimination
+solver.thaw();
+```

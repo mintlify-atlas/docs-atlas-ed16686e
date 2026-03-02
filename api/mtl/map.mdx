@@ -1,0 +1,438 @@
+---
+title: Map and IntMap
+description: Hash table and integer-indexed map implementations
+---
+
+## Map
+
+The `Map` template class provides a hash table implementation for arbitrary key-value pairs.
+
+### Template parameters
+
+<ParamField path="K" type="typename" required>
+  Key type
+</ParamField>
+
+<ParamField path="D" type="typename" required>
+  Data (value) type
+</ParamField>
+
+<ParamField path="H" type="typename" default="Hash<K>">
+  Hash functor type
+</ParamField>
+
+<ParamField path="E" type="typename" default="Equal<K>">
+  Equality comparator type
+</ParamField>
+
+### Nested types
+
+<ResponseField name="Pair" type="struct">
+  Contains `K key` and `D data` members representing a key-value pair
+</ResponseField>
+
+### Constructors
+
+```cpp
+Map()
+Map(const H& h, const E& e)
+```
+
+<ParamField path="h" type="const H&">
+  Hash function instance
+</ParamField>
+
+<ParamField path="e" type="const E&">
+  Equality comparator instance
+</ParamField>
+
+### Core operations
+
+#### operator[]
+
+```cpp
+D& operator[](const K& k)
+const D& operator[](const K& k) const
+```
+
+Accesses the value associated with a key. **Precondition:** The key must exist in the map.
+
+<ParamField path="k" type="const K&" required>
+  Key to look up (must already exist)
+</ParamField>
+
+<Warning>
+This operator requires the key to already exist. Use `insert()` first or check with `has()`.
+</Warning>
+
+#### insert
+
+```cpp
+void insert(const K& k, const D& d)
+```
+
+Inserts a new key-value pair. **Precondition:** The key must NOT already exist.
+
+<ParamField path="k" type="const K&" required>
+  Key to insert (must not exist)
+</ParamField>
+
+<ParamField path="d" type="const D&" required>
+  Data to associate with the key
+</ParamField>
+
+<Note>
+The map automatically rehashes when needed to maintain performance.
+</Note>
+
+#### has
+
+```cpp
+bool has(const K& k) const
+```
+
+Checks whether a key exists in the map.
+
+<ParamField path="k" type="const K&" required>
+  Key to check
+</ParamField>
+
+#### peek
+
+```cpp
+bool peek(const K& k, D& d) const
+```
+
+Looks up a key and stores its value if found.
+
+<ParamField path="k" type="const K&" required>
+  Key to look up
+</ParamField>
+
+<ParamField path="d" type="D&" required>
+  Reference to store the value if found
+</ParamField>
+
+**Returns:** `true` if the key exists, `false` otherwise
+
+#### remove
+
+```cpp
+void remove(const K& k)
+```
+
+Removes a key-value pair. **Precondition:** The key must exist.
+
+<ParamField path="k" type="const K&" required>
+  Key to remove (must exist)
+</ParamField>
+
+### Utility operations
+
+#### elems
+
+```cpp
+int elems() const
+```
+
+Returns the number of elements in the map.
+
+#### bucket_count
+
+```cpp
+int bucket_count() const
+```
+
+Returns the number of hash table buckets.
+
+#### clear
+
+```cpp
+void clear()
+```
+
+Removes all elements and deallocates the hash table.
+
+#### moveTo
+
+```cpp
+void moveTo(Map& other)
+```
+
+Moves this map's contents to another map, leaving this map empty.
+
+<ParamField path="other" type="Map&" required>
+  Destination map
+</ParamField>
+
+<Note>
+The hash and equality objects are not moved by this method.
+</Note>
+
+#### bucket
+
+```cpp
+const vec<Pair>& bucket(int i) const
+```
+
+Accesses a specific hash table bucket for iteration.
+
+<ParamField path="i" type="int" required>
+  Bucket index
+</ParamField>
+
+### Hash and equality functors
+
+MiniSat provides default hash functions for integer types:
+
+```cpp
+static inline uint32_t hash(uint32_t x) { return x; }
+static inline uint32_t hash(uint64_t x) { return (uint32_t)x; }
+static inline uint32_t hash(int32_t x)  { return (uint32_t)x; }
+static inline uint32_t hash(int64_t x)  { return (uint32_t)x; }
+```
+
+For pointer types, use `DeepHash<K>` and `DeepEqual<K>` to hash/compare pointed-to values.
+
+### Usage example
+
+```cpp
+#include "minisat/mtl/Map.h"
+
+using namespace Minisat;
+
+Map<int, const char*> names;
+
+names.insert(1, "Alice");
+names.insert(2, "Bob");
+names.insert(3, "Charlie");
+
+if (names.has(2)) {
+    printf("Name: %s\n", names[2]); // Prints: Name: Bob
+}
+
+names.remove(2);
+```
+
+---
+
+## IntMap
+
+The `IntMap` template class provides an efficient map for keys that can be converted to small integers. It uses a vector for O(1) access.
+
+### Template parameters
+
+<ParamField path="K" type="typename" required>
+  Key type (must be convertible to integer index)
+</ParamField>
+
+<ParamField path="V" type="typename" required>
+  Value type
+</ParamField>
+
+<ParamField path="MkIndex" type="typename" default="MkIndexDefault<K>">
+  Functor that converts keys to vector indices
+</ParamField>
+
+### Constructor
+
+```cpp
+explicit IntMap(MkIndex _index = MkIndex())
+```
+
+<ParamField path="_index" type="MkIndex" default="MkIndex()">
+  Index conversion functor
+</ParamField>
+
+### Operations
+
+#### has
+
+```cpp
+bool has(K k) const
+```
+
+Checks whether a key exists (has been reserved).
+
+<ParamField path="k" type="K" required>
+  Key to check
+</ParamField>
+
+#### operator[]
+
+```cpp
+V& operator[](K k)
+const V& operator[](K k) const
+```
+
+Accesses the value for a key. **Precondition:** The key must have been reserved.
+
+<ParamField path="k" type="K" required>
+  Key to access (must exist)
+</ParamField>
+
+#### reserve
+
+```cpp
+void reserve(K key)
+void reserve(K key, V pad)
+```
+
+Ensures space exists for the key, growing the internal vector if needed.
+
+<ParamField path="key" type="K" required>
+  Key to reserve space for
+</ParamField>
+
+<ParamField path="pad" type="V">
+  Value to use for any new slots created
+</ParamField>
+
+#### insert
+
+```cpp
+void insert(K key, V val)
+void insert(K key, V val, V pad)
+```
+
+Reserves space for the key and assigns the value.
+
+<ParamField path="key" type="K" required>
+  Key to insert
+</ParamField>
+
+<ParamField path="val" type="V" required>
+  Value to assign
+</ParamField>
+
+<ParamField path="pad" type="V">
+  Padding value for intermediate slots
+</ParamField>
+
+#### Iteration
+
+```cpp
+const V* begin() const
+const V* end() const
+V* begin()
+V* end()
+```
+
+Provides iterator-style access to all values in key order.
+
+#### Utility methods
+
+```cpp
+void clear(bool dispose = false)
+void moveTo(IntMap& to)
+void copyTo(IntMap& to) const
+```
+
+<ParamField path="dispose" type="bool" default="false">
+  Whether to deallocate storage
+</ParamField>
+
+<ParamField path="to" type="IntMap&" required>
+  Destination map for move/copy
+</ParamField>
+
+### Usage example
+
+```cpp
+#include "minisat/mtl/IntMap.h"
+
+using namespace Minisat;
+
+// Map from Var (which is just an int) to activity scores
+IntMap<Var, double> activity;
+
+Var v0 = 0, v1 = 1, v2 = 2;
+
+activity.insert(v0, 1.0);
+activity.insert(v1, 2.5);
+activity.insert(v2, 0.8);
+
+if (activity.has(v1)) {
+    activity[v1] += 0.5; // Increase activity
+}
+```
+
+---
+
+## IntSet
+
+The `IntSet` template class provides a set implementation for integer-indexable keys.
+
+### Template parameters
+
+<ParamField path="K" type="typename" required>
+  Key type
+</ParamField>
+
+<ParamField path="MkIndex" type="typename" default="MkIndexDefault<K>">
+  Index conversion functor
+</ParamField>
+
+### Operations
+
+#### insert
+
+```cpp
+void insert(K k)
+```
+
+Adds a key to the set (no effect if already present).
+
+#### has
+
+```cpp
+bool has(K k)
+```
+
+Checks whether a key is in the set.
+
+#### size
+
+```cpp
+int size() const
+```
+
+Returns the number of elements in the set.
+
+#### clear
+
+```cpp
+void clear(bool free = false)
+```
+
+Removes all elements from the set.
+
+#### toVec
+
+```cpp
+const vec<K>& toVec() const
+```
+
+Returns the internal vector of keys.
+
+#### operator[]
+
+```cpp
+K operator[](int index) const
+```
+
+Accesses the key at the given position in insertion order.
+
+## Performance characteristics
+
+### Map
+- **Insert**: O(1) amortized
+- **Lookup**: O(1) average case
+- **Remove**: O(1) average case
+- **Space**: O(n) plus overhead for hash table buckets
+
+### IntMap
+- **Insert**: O(1) amortized
+- **Lookup**: O(1)
+- **Remove**: Not supported
+- **Space**: O(max_key) - sparse for large key ranges

@@ -1,0 +1,267 @@
+---
+title: vec<T>
+description: Automatically resizable array template class with stack interface
+---
+
+## Overview
+
+The `vec<T>` template class provides an automatically resizable array implementation optimized for performance. It uses `realloc` for memory management and grows by approximately 3/2 when capacity is exceeded.
+
+<Warning>
+Do not use this vector on datatypes that cannot be relocated in memory with `realloc`.
+</Warning>
+
+## Template parameters
+
+<ParamField path="T" type="typename" required>
+  The element type to store in the vector
+</ParamField>
+
+<ParamField path="_Size" type="typename" default="int">
+  The integer type used for size and capacity tracking
+</ParamField>
+
+## Type definitions
+
+<ResponseField name="Size" type="_Size">
+  Public typedef for the size type used by the vector
+</ResponseField>
+
+## Constructors
+
+### Default constructor
+
+```cpp
+vec()
+```
+
+Creates an empty vector with no allocated memory.
+
+### Size constructor
+
+```cpp
+explicit vec(Size size)
+```
+
+<ParamField path="size" type="Size" required>
+  Initial size of the vector. Elements are default-constructed.
+</ParamField>
+
+### Size with padding constructor
+
+```cpp
+vec(Size size, const T& pad)
+```
+
+<ParamField path="size" type="Size" required>
+  Initial size of the vector
+</ParamField>
+
+<ParamField path="pad" type="const T&" required>
+  Value to copy into all elements
+</ParamField>
+
+## Size operations
+
+### size
+
+```cpp
+Size size() const
+```
+
+Returns the number of elements in the vector.
+
+### capacity
+
+```cpp
+int capacity() const
+void capacity(Size min_cap)
+```
+
+Gets or sets the minimum capacity. When setting capacity, the vector grows by approximately 3/2 if needed.
+
+<ParamField path="min_cap" type="Size">
+  Minimum capacity to ensure is available
+</ParamField>
+
+### shrink
+
+```cpp
+void shrink(Size nelems)
+```
+
+Removes `nelems` elements from the end of the vector and calls their destructors.
+
+<ParamField path="nelems" type="Size" required>
+  Number of elements to remove (must be ≤ current size)
+</ParamField>
+
+### shrink_
+
+```cpp
+void shrink_(Size nelems)
+```
+
+Fast version of `shrink` that does not call destructors. Use only when element destructors are trivial.
+
+<Warning>
+This method does not call destructors. Only use for types with trivial destructors.
+</Warning>
+
+### growTo
+
+```cpp
+void growTo(Size size)
+void growTo(Size size, const T& pad)
+```
+
+Grows the vector to the specified size. New elements are either default-constructed or initialized with `pad`.
+
+<ParamField path="size" type="Size" required>
+  Target size for the vector
+</ParamField>
+
+<ParamField path="pad" type="const T&">
+  Value to copy into new elements (if provided)
+</ParamField>
+
+### clear
+
+```cpp
+void clear(bool dealloc = false)
+```
+
+Removes all elements from the vector, calling their destructors.
+
+<ParamField path="dealloc" type="bool" default="false">
+  If true, also frees the allocated memory
+</ParamField>
+
+## Stack interface
+
+### push
+
+```cpp
+void push()
+void push(const T& elem)
+```
+
+Adds an element to the end of the vector. The no-argument version default-constructs the element.
+
+<ParamField path="elem" type="const T&">
+  Element to add to the vector
+</ParamField>
+
+<Info>
+Overflow cannot occur in the `sz+1` expression because capacity is always even but `INT_MAX` is odd.
+</Info>
+
+### push_
+
+```cpp
+void push_(const T& elem)
+```
+
+Fast push that assumes sufficient capacity is available.
+
+<ParamField path="elem" type="const T&" required>
+  Element to add to the vector
+</ParamField>
+
+<Warning>
+This method does not check capacity. Ensure `size() < capacity()` before calling.
+</Warning>
+
+### pop
+
+```cpp
+void pop()
+```
+
+Removes and destructs the last element. Vector must not be empty.
+
+### last
+
+```cpp
+T& last()
+const T& last() const
+```
+
+Returns a reference to the last element. Vector must not be empty.
+
+## Vector interface
+
+### operator[]
+
+```cpp
+T& operator[](Size index)
+const T& operator[](Size index) const
+```
+
+Accesses the element at the given index. No bounds checking is performed.
+
+<ParamField path="index" type="Size" required>
+  Zero-based index of the element to access
+</ParamField>
+
+### operator T*
+
+```cpp
+operator T*()
+```
+
+Provides implicit conversion to pointer to first element.
+
+## Duplication operations
+
+### copyTo
+
+```cpp
+void copyTo(vec<T>& copy) const
+```
+
+Creates a deep copy of this vector.
+
+<ParamField path="copy" type="vec<T>&" required>
+  Destination vector (will be cleared first)
+</ParamField>
+
+### moveTo
+
+```cpp
+void moveTo(vec<T>& dest)
+```
+
+Moves this vector's contents to another vector, leaving this vector empty.
+
+<ParamField path="dest" type="vec<T>&" required>
+  Destination vector (will be cleared first)
+</ParamField>
+
+## Usage example
+
+```cpp
+#include "minisat/mtl/Vec.h"
+
+using namespace Minisat;
+
+vec<int> numbers;
+numbers.push(10);
+numbers.push(20);
+numbers.push(30);
+
+for (int i = 0; i < numbers.size(); i++) {
+    printf("%d\n", numbers[i]);
+}
+
+numbers.pop();
+printf("Last: %d\n", numbers.last()); // Prints: Last: 20
+```
+
+## Performance characteristics
+
+- **Random access**: O(1)
+- **Push operation**: Amortized O(1)
+- **Pop operation**: O(1)
+- **Growth factor**: Approximately 3/2
+- **Memory overhead**: Minimal (three words: data pointer, size, capacity)

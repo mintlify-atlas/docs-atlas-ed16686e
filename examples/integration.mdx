@@ -1,0 +1,460 @@
+---
+title: Integration
+description: Learn how to integrate MiniSat into your C++ project as a library
+---
+
+This guide shows how to link MiniSat as a library and use it in your applications.
+
+## Building MiniSat as a library
+
+MiniSat can be built as a static or shared library:
+
+<Steps>
+
+### Clone the repository
+
+```bash
+git clone https://github.com/niklasso/minisat.git
+cd minisat
+```
+
+### Build static library
+
+```bash
+make config prefix=/usr/local
+make install
+```
+
+This creates:
+- `libminisat.a` - Static library
+- Header files in `include/minisat/`
+
+### Alternative: build with CMake
+
+For more control, create a `CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.10)
+project(MyProject)
+
+set(CMAKE_CXX_STANDARD 11)
+
+# Add MiniSat
+add_subdirectory(minisat)
+
+# Your executable
+add_executable(my_sat_solver main.cpp)
+target_link_libraries(my_sat_solver minisat)
+```
+
+</Steps>
+
+## Project structure
+
+Organize your project to use MiniSat:
+
+```
+my_project/
+├── CMakeLists.txt
+├── src/
+│   └── main.cpp
+├── include/
+└── external/
+    └── minisat/
+        ├── minisat/
+        │   ├── core/
+        │   ├── simp/
+        │   ├── mtl/
+        │   └── utils/
+        └── CMakeLists.txt
+```
+
+## Minimal CMake integration
+
+Here's a complete `CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.10)
+project(SATSolver CXX)
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# MiniSat library
+set(MINISAT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/minisat)
+
+# MiniSat sources
+file(GLOB MINISAT_SOURCES
+    ${MINISAT_DIR}/minisat/core/*.cc
+    ${MINISAT_DIR}/minisat/utils/*.cc
+)
+
+# Create MiniSat library
+add_library(minisat STATIC ${MINISAT_SOURCES})
+target_include_directories(minisat PUBLIC ${MINISAT_DIR})
+
+# Enable optimizations
+target_compile_options(minisat PRIVATE -O3 -Wall)
+
+# Your application
+add_executable(my_solver src/main.cpp)
+target_link_libraries(my_solver minisat z)  # z is zlib, required by MiniSat
+```
+
+<Note>
+MiniSat requires zlib for DIMACS file parsing. Link with `-lz` or find zlib with CMake.
+</Note>
+
+## Simple application example
+
+Create `src/main.cpp`:
+
+```cpp
+#include "minisat/core/Solver.h"
+#include <iostream>
+
+using namespace Minisat;
+
+int main() {
+    Solver solver;
+    
+    // Create variables
+    Var x = solver.newVar();
+    Var y = solver.newVar();
+    
+    // Add clauses
+    solver.addClause(mkLit(x), mkLit(y));
+    solver.addClause(~mkLit(x), ~mkLit(y));
+    
+    // Solve
+    bool sat = solver.solve();
+    
+    std::cout << (sat ? "SAT" : "UNSAT") << std::endl;
+    
+    return 0;
+}
+```
+
+## Building your project
+
+```bash
+mkdir build
+cd build
+cmake ..
+make
+./my_solver
+```
+
+## Using SimpSolver
+
+For preprocessing and simplification, use `SimpSolver`:
+
+```cpp
+#include "minisat/simp/SimpSolver.h"
+#include <iostream>
+
+using namespace Minisat;
+
+int main() {
+    SimpSolver solver;
+    
+    // Enable variable elimination
+    solver.use_elim = true;
+    
+    Var x = solver.newVar();
+    Var y = solver.newVar();
+    Var z = solver.newVar();
+    
+    // Add clauses
+    solver.addClause(mkLit(x), mkLit(y));
+    solver.addClause(~mkLit(x), mkLit(z));
+    solver.addClause(~mkLit(y), mkLit(z));
+    
+    // Solve with preprocessing
+    bool sat = solver.solve(true);  // true = do simplification
+    
+    std::cout << (sat ? "SAT" : "UNSAT") << std::endl;
+    std::cout << "Variables eliminated: " << solver.eliminated_vars << std::endl;
+    
+    return 0;
+}
+```
+
+<Info>
+`SimpSolver` extends `Solver` with preprocessing techniques like variable elimination and subsumption.
+</Info>
+
+## Makefile integration
+
+If not using CMake, here's a Makefile:
+
+```makefile
+CXX = g++
+CXXFLAGS = -std=c++11 -O3 -Wall -I./external/minisat
+LDFLAGS = -lz
+
+MINISAT_DIR = external/minisat
+MINISAT_SRCS = $(wildcard $(MINISAT_DIR)/minisat/core/*.cc) \
+               $(wildcard $(MINISAT_DIR)/minisat/utils/*.cc)
+MINISAT_OBJS = $(MINISAT_SRCS:.cc=.o)
+
+TARGET = my_solver
+SRCS = src/main.cpp
+OBJS = $(SRCS:.cpp=.o)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS) $(MINISAT_OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+%.o: %.cc
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(TARGET) $(OBJS) $(MINISAT_OBJS)
+```
+
+## Header-only wrapper
+
+For simpler integration, create a wrapper header:
+
+```cpp
+// minisat_wrapper.h
+#ifndef MINISAT_WRAPPER_H
+#define MINISAT_WRAPPER_H
+
+#include "minisat/core/Solver.h"
+#include "minisat/mtl/Vec.h"
+#include <vector>
+
+class SimpleSAT {
+private:
+    Minisat::Solver solver;
+    
+public:
+    // Create n variables and return their IDs
+    std::vector<int> newVars(int n) {
+        std::vector<int> vars;
+        for (int i = 0; i < n; i++) {
+            vars.push_back(solver.newVar());
+        }
+        return vars;
+    }
+    
+    // Add clause from vector
+    bool addClause(const std::vector<int>& literals) {
+        Minisat::vec<Minisat::Lit> clause;
+        for (int lit : literals) {
+            int var = abs(lit) - 1;  // Convert to 0-indexed
+            bool sign = (lit < 0);
+            clause.push(Minisat::mkLit(var, sign));
+        }
+        return solver.addClause(clause);
+    }
+    
+    // Solve and return result
+    bool solve() {
+        return solver.solve();
+    }
+    
+    // Get variable value (1-indexed)
+    bool getValue(int var) {
+        return solver.modelValue(var - 1) == Minisat::l_True;
+    }
+};
+
+#endif
+```
+
+Usage:
+
+```cpp
+#include "minisat_wrapper.h"
+#include <iostream>
+
+int main() {
+    SimpleSAT sat;
+    
+    // Variables are 1-indexed for convenience
+    sat.newVars(3);  // Creates variables 1, 2, 3
+    
+    // Add clauses using literals (positive = var, negative = -var)
+    sat.addClause({1, 2});      // (x1 OR x2)
+    sat.addClause({-1, 3});     // (NOT x1 OR x3)
+    sat.addClause({-2, -3});    // (NOT x2 OR NOT x3)
+    
+    if (sat.solve()) {
+        std::cout << "SAT" << std::endl;
+        std::cout << "x1 = " << sat.getValue(1) << std::endl;
+        std::cout << "x2 = " << sat.getValue(2) << std::endl;
+        std::cout << "x3 = " << sat.getValue(3) << std::endl;
+    }
+    
+    return 0;
+}
+```
+
+## Reading DIMACS files
+
+To read standard DIMACS format files:
+
+```cpp
+#include "minisat/core/Solver.h"
+#include "minisat/core/Dimacs.h"
+#include <iostream>
+#include <zlib.h>
+
+using namespace Minisat;
+
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <dimacs-file>" << std::endl;
+        return 1;
+    }
+    
+    Solver solver;
+    
+    // Open file (supports .gz files)
+    gzFile in = gzopen(argv[1], "rb");
+    if (in == NULL) {
+        std::cerr << "Could not open file: " << argv[1] << std::endl;
+        return 1;
+    }
+    
+    // Parse DIMACS format
+    parse_DIMACS(in, solver);
+    gzclose(in);
+    
+    std::cout << "Loaded " << solver.nVars() << " variables, "
+              << solver.nClauses() << " clauses" << std::endl;
+    
+    // Solve
+    bool sat = solver.solve();
+    
+    std::cout << (sat ? "SATISFIABLE" : "UNSATISFIABLE") << std::endl;
+    
+    return 0;
+}
+```
+
+<Warning>
+Don't forget to link with zlib (`-lz`) when using DIMACS parsing functions.
+</Warning>
+
+## Compiler flags
+
+Recommended compilation flags:
+
+```bash
+# Release build
+g++ -O3 -DNDEBUG -std=c++11 -I./minisat main.cpp libminisat.a -lz -o solver
+
+# Debug build
+g++ -g -Wall -std=c++11 -I./minisat main.cpp libminisat.a -lz -o solver
+
+# With link-time optimization
+g++ -O3 -DNDEBUG -flto -std=c++11 -I./minisat main.cpp libminisat.a -lz -o solver
+```
+
+## Common linking errors
+
+<Steps>
+
+### Undefined reference to zlib
+
+```
+undefined reference to `gzopen'
+```
+
+**Solution:** Add `-lz` to link flags
+
+### Cannot find minisat headers
+
+```
+fatal error: minisat/core/Solver.h: No such file or directory
+```
+
+**Solution:** Add include path: `-I/path/to/minisat`
+
+### Undefined reference to Minisat symbols
+
+```
+undefined reference to `Minisat::Solver::solve()'
+```
+
+**Solution:** Link with libminisat: `-L/path/to/lib -lminisat`
+
+</Steps>
+
+## Embedding in larger applications
+
+For integrating into existing codebases:
+
+```cpp
+// sat_module.h
+#pragma once
+#include <vector>
+#include <string>
+
+class SATModule {
+public:
+    SATModule();
+    ~SATModule();
+    
+    int addVariable(const std::string& name);
+    void addClause(const std::vector<int>& literals);
+    bool solve();
+    bool getAssignment(int varId);
+    
+private:
+    class Impl;  // PIMPL pattern to hide MiniSat headers
+    Impl* impl;
+};
+```
+
+```cpp
+// sat_module.cpp
+#include "sat_module.h"
+#include "minisat/core/Solver.h"
+#include <unordered_map>
+
+class SATModule::Impl {
+public:
+    Minisat::Solver solver;
+    std::unordered_map<std::string, int> varNames;
+};
+
+SATModule::SATModule() : impl(new Impl()) {}
+SATModule::~SATModule() { delete impl; }
+
+int SATModule::addVariable(const std::string& name) {
+    int id = impl->solver.newVar();
+    impl->varNames[name] = id;
+    return id;
+}
+
+void SATModule::addClause(const std::vector<int>& literals) {
+    Minisat::vec<Minisat::Lit> clause;
+    for (int lit : literals) {
+        int var = abs(lit) - 1;
+        bool sign = (lit < 0);
+        clause.push(Minisat::mkLit(var, sign));
+    }
+    impl->solver.addClause(clause);
+}
+
+bool SATModule::solve() {
+    return impl->solver.solve();
+}
+
+bool SATModule::getAssignment(int varId) {
+    return impl->solver.modelValue(varId) == Minisat::l_True;
+}
+```
+
+<Info>
+Using the PIMPL pattern keeps MiniSat headers out of your public API, reducing compile-time dependencies.
+</Info>

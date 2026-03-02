@@ -1,0 +1,252 @@
+---
+title: Incremental solving
+description: Learn how to reuse the solver to solve multiple related SAT problems efficiently
+---
+
+MiniSat supports incremental solving, allowing you to add clauses between solve calls and reuse learned information.
+
+## Basic incremental solving
+
+You can add clauses between solve calls:
+
+```cpp
+#include "minisat/core/Solver.h"
+#include <iostream>
+
+using namespace Minisat;
+
+int main() {
+    Solver solver;
+    
+    Var a = solver.newVar();
+    Var b = solver.newVar();
+    Var c = solver.newVar();
+    
+    // Initial formula: (a OR b)
+    solver.addClause(mkLit(a), mkLit(b));
+    
+    // First solve
+    bool sat = solver.solve();
+    std::cout << "First solve: " << (sat ? "SAT" : "UNSAT") << std::endl;
+    
+    if (sat) {
+        std::cout << "a = " << (solver.modelValue(a) == l_True) << std::endl;
+        std::cout << "b = " << (solver.modelValue(b) == l_True) << std::endl;
+    }
+    
+    // Add more clauses: (NOT a) AND (NOT b)
+    solver.addClause(~mkLit(a));
+    solver.addClause(~mkLit(b));
+    
+    // Second solve - should be UNSAT
+    sat = solver.solve();
+    std::cout << "Second solve: " << (sat ? "SAT" : "UNSAT") << std::endl;
+    
+    return 0;
+}
+```
+
+<Note>
+Incremental solving only works in one direction: you can add clauses but not remove them. Each solve call considers all previously added clauses.
+</Note>
+
+## Solving multiple configurations
+
+A common pattern is testing different configurations:
+
+```cpp
+#include "minisat/core/Solver.h"
+#include <iostream>
+#include <vector>
+
+using namespace Minisat;
+
+void testConfiguration(Solver& solver, 
+                       const std::vector<std::pair<Var, bool>>& config) {
+    // Add configuration as unit clauses
+    for (const auto& [var, value] : config) {
+        if (value) {
+            solver.addClause(mkLit(var));
+        } else {
+            solver.addClause(~mkLit(var));
+        }
+    }
+    
+    bool sat = solver.solve();
+    std::cout << "Configuration " << (sat ? "valid" : "invalid") << std::endl;
+}
+
+int main() {
+    Solver solver;
+    
+    Var x = solver.newVar();
+    Var y = solver.newVar();
+    Var z = solver.newVar();
+    
+    // Add constraints
+    solver.addClause(mkLit(x), mkLit(y));  // At least one of x or y
+    solver.addClause(~mkLit(y), mkLit(z)); // If y then z
+    
+    // Test configuration: x=true, y=false
+    Solver test1 = solver;  // Make a copy
+    test1.addClause(mkLit(x));
+    test1.addClause(~mkLit(y));
+    std::cout << "x=T, y=F: " << (test1.solve() ? "SAT" : "UNSAT") << std::endl;
+    
+    // Test configuration: x=false, y=true, z=false
+    Solver test2 = solver;  // Make another copy
+    test2.addClause(~mkLit(x));
+    test2.addClause(mkLit(y));
+    test2.addClause(~mkLit(z));
+    std::cout << "x=F, y=T, z=F: " << (test2.solve() ? "SAT" : "UNSAT") << std::endl;
+    
+    return 0;
+}
+```
+
+<Warning>
+Copying a `Solver` object creates an independent copy. For truly incremental solving without copying, use assumptions (see the assumptions page).
+</Warning>
+
+## Building formulas incrementally
+
+You can construct complex formulas step by step:
+
+```cpp
+#include "minisat/core/Solver.h"
+#include <iostream>
+#include <vector>
+
+using namespace Minisat;
+
+// Add at-most-one constraint: at most one variable can be true
+void addAtMostOne(Solver& solver, const std::vector<Var>& vars) {
+    for (size_t i = 0; i < vars.size(); i++) {
+        for (size_t j = i + 1; j < vars.size(); j++) {
+            // NOT xi OR NOT xj
+            solver.addClause(~mkLit(vars[i]), ~mkLit(vars[j]));
+        }
+    }
+}
+
+// Add at-least-one constraint: at least one variable must be true
+void addAtLeastOne(Solver& solver, const std::vector<Var>& vars) {
+    vec<Lit> clause;
+    for (Var v : vars) {
+        clause.push(mkLit(v));
+    }
+    solver.addClause(clause);
+}
+
+// Add exactly-one constraint
+void addExactlyOne(Solver& solver, const std::vector<Var>& vars) {
+    addAtLeastOne(solver, vars);
+    addAtMostOne(solver, vars);
+}
+
+int main() {
+    Solver solver;
+    
+    // Create variables for 3 choices
+    std::vector<Var> choices;
+    for (int i = 0; i < 3; i++) {
+        choices.push_back(solver.newVar());
+    }
+    
+    // Exactly one choice must be selected
+    addExactlyOne(solver, choices);
+    
+    // Add application-specific constraints
+    // If choice 0, then some other constraint...
+    // ...
+    
+    bool sat = solver.solve();
+    if (sat) {
+        std::cout << "Selected choice: ";
+        for (size_t i = 0; i < choices.size(); i++) {
+            if (solver.modelValue(choices[i]) == l_True) {
+                std::cout << i << std::endl;
+                break;
+            }
+        }
+    }
+    
+    return 0;
+}
+```
+
+## Performance considerations
+
+<Steps>
+
+### Reuse learned clauses
+
+Each solve call benefits from clauses learned in previous calls:
+
+```cpp
+Solver solver;
+// ... add clauses and solve ...
+bool sat1 = solver.solve();
+
+std::cout << "Learned clauses: " << solver.nLearnts() << std::endl;
+
+// Next solve benefits from learned clauses
+solver.addClause(/* new clause */);
+bool sat2 = solver.solve();
+```
+
+### Call simplify between solves
+
+Periodically simplify the clause database:
+
+```cpp
+solver.addClause(/* ... */);
+solver.simplify();  // Remove satisfied clauses
+bool sat = solver.solve();
+```
+
+### Avoid unnecessary copies
+
+Instead of copying the solver, use assumptions (see next page) for temporary constraints:
+
+```cpp
+// Bad: copying is expensive
+Solver copy = original;
+copy.addClause(~mkLit(x));
+bool sat = copy.solve();
+
+// Good: use assumptions instead
+vec<Lit> assumptions;
+assumptions.push(~mkLit(x));
+bool sat = original.solve(assumptions);
+```
+
+</Steps>
+
+## Checking satisfiability multiple times
+
+You can solve multiple times as long as the solver remains in a consistent state:
+
+```cpp
+Solver solver;
+
+// Add base constraints
+solver.addClause(mkLit(a), mkLit(b));
+
+for (int i = 0; i < 10; i++) {
+    // Add dynamic constraints
+    Var v = solver.newVar();
+    solver.addClause(~mkLit(v), mkLit(a));
+    
+    if (!solver.solve()) {
+        std::cout << "Became UNSAT at iteration " << i << std::endl;
+        break;
+    }
+    
+    std::cout << "Still SAT with " << solver.nVars() << " variables" << std::endl;
+}
+```
+
+<Info>
+The solver maintains all learned information between calls, making incremental solving much faster than creating a new solver each time.
+</Info>

@@ -1,0 +1,590 @@
+---
+title: Solver types
+description: Core data types for variables, literals, clauses, and lifted booleans
+---
+
+The solver types module defines the fundamental data structures used throughout MiniSat, including variables, literals, lifted booleans, and clauses.
+
+## Variables
+
+### Var
+
+Variables are represented as plain integers.
+
+```cpp
+typedef int Var;
+```
+
+<Note>
+  Variables should be chosen from the range 0..N so they can be used as array indices.
+</Note>
+
+### var_Undef
+
+Constant representing an undefined variable.
+
+```cpp
+const Var var_Undef = -1;
+```
+
+## Literals
+
+### Lit
+
+A literal represents a variable or its negation.
+
+```cpp
+struct Lit {
+    int x;
+    
+    bool operator == (Lit p) const;
+    bool operator != (Lit p) const;
+    bool operator <  (Lit p) const;
+};
+```
+
+<Note>
+  The `<` operator orders literals such that `p` and `~p` are adjacent.
+</Note>
+
+### mkLit()
+
+Creates a literal from a variable.
+
+```cpp
+Lit mkLit(Var var, bool sign = false);
+```
+
+<ParamField path="var" type="Var" required>
+  The variable.
+</ParamField>
+
+<ParamField path="sign" type="bool" default="false">
+  If `true`, creates the negated literal.
+</ParamField>
+
+<ResponseField name="return" type="Lit">
+  The created literal.
+</ResponseField>
+
+### Literal operators
+
+```cpp
+Lit operator ~(Lit p);              // Negation
+Lit operator ^(Lit p, bool b);      // XOR with boolean
+bool sign(Lit p);                   // Returns sign (true if negated)
+int var(Lit p);                     // Extracts variable from literal
+```
+
+### Literal conversion functions
+
+```cpp
+int toInt(Lit p);     // Converts literal to integer for array indexing
+Lit toLit(int i);     // Converts integer back to literal
+```
+
+### Special literal constants
+
+```cpp
+const Lit lit_Undef = { -2 };  // Undefined literal
+const Lit lit_Error = { -1 };  // Error literal
+```
+
+## Lifted booleans
+
+### lbool
+
+A three-valued logic type representing true, false, or undefined.
+
+```cpp
+class lbool {
+    uint8_t value;
+    
+public:
+    explicit lbool(uint8_t v);
+    lbool();
+    explicit lbool(bool x);
+    
+    bool operator == (lbool b) const;
+    bool operator != (lbool b) const;
+    lbool operator ^ (bool b) const;
+    lbool operator && (lbool b) const;
+    lbool operator || (lbool b) const;
+};
+```
+
+### lbool constants
+
+```cpp
+const lbool l_True ((uint8_t)0);
+const lbool l_False((uint8_t)1);
+const lbool l_Undef((uint8_t)2);
+```
+
+### lbool conversion functions
+
+```cpp
+int toInt(lbool l);      // Converts to integer representation
+lbool toLbool(int v);    // Converts integer to lbool
+```
+
+<Note>
+  The implementation is optimized for comparisons between a variable and a constant, which is the most common use case in the solver.
+</Note>
+
+## Clauses
+
+### Clause
+
+Represents a disjunction of literals.
+
+```cpp
+class Clause {
+public:
+    int size() const;
+    void shrink(int i);
+    void pop();
+    bool learnt() const;
+    bool has_extra() const;
+    uint32_t mark() const;
+    void mark(uint32_t m);
+    const Lit& last() const;
+    
+    bool reloced() const;
+    CRef relocation() const;
+    void relocate(CRef c);
+    
+    Lit& operator[](int i);
+    Lit operator[](int i) const;
+    operator const Lit*() const;
+    
+    float& activity();
+    uint32_t abstraction() const;
+    
+    Lit subsumes(const Clause& other) const;
+    void strengthen(Lit p);
+    void calcAbstraction();
+};
+```
+
+### Clause methods
+
+#### size()
+
+Returns the number of literals in the clause.
+
+```cpp
+int size() const;
+```
+
+<ResponseField name="return" type="int">
+  Number of literals in the clause.
+</ResponseField>
+
+#### shrink()
+
+Reduces the clause size by removing literals from the end.
+
+```cpp
+void shrink(int i);
+```
+
+<ParamField path="i" type="int" required>
+  Number of literals to remove.
+</ParamField>
+
+#### pop()
+
+Removes the last literal from the clause.
+
+```cpp
+void pop();
+```
+
+#### learnt()
+
+Checks if this is a learnt clause.
+
+```cpp
+bool learnt() const;
+```
+
+<ResponseField name="return" type="bool">
+  Returns `true` if the clause was learned during conflict analysis, `false` if it's an original clause.
+</ResponseField>
+
+#### has_extra()
+
+Checks if the clause has extra data fields.
+
+```cpp
+bool has_extra() const;
+```
+
+<ResponseField name="return" type="bool">
+  Returns `true` if the clause stores additional metadata.
+</ResponseField>
+
+#### mark()
+
+Gets or sets the clause mark (used for garbage collection).
+
+```cpp
+uint32_t mark() const;
+void mark(uint32_t m);
+```
+
+<ParamField path="m" type="uint32_t">
+  Mark value to set.
+</ParamField>
+
+<ResponseField name="return" type="uint32_t">
+  Current mark value.
+</ResponseField>
+
+#### activity()
+
+Gets the clause activity (for learnt clauses).
+
+```cpp
+float& activity();
+```
+
+<ResponseField name="return" type="float&">
+  Reference to the clause activity value.
+</ResponseField>
+
+<Warning>
+  Only valid if `has_extra()` returns true.
+</Warning>
+
+#### abstraction()
+
+Gets the clause abstraction (bit mask of variables).
+
+```cpp
+uint32_t abstraction() const;
+```
+
+<ResponseField name="return" type="uint32_t">
+  Bit mask representing which variables appear in the clause.
+</ResponseField>
+
+#### subsumes()
+
+Checks if this clause subsumes another clause.
+
+```cpp
+Lit subsumes(const Clause& other) const;
+```
+
+<ParamField path="other" type="const Clause&" required>
+  Clause to check against.
+</ParamField>
+
+<ResponseField name="return" type="Lit">
+  - `lit_Error`: No subsumption or simplification possible
+  - `lit_Undef`: This clause subsumes the other
+  - A literal `p`: The literal `p` can be deleted from the other clause
+</ResponseField>
+
+#### strengthen()
+
+Removes a literal from the clause.
+
+```cpp
+void strengthen(Lit p);
+```
+
+<ParamField path="p" type="Lit" required>
+  Literal to remove.
+</ParamField>
+
+<Note>
+  The abstraction is recalculated after removal.
+</Note>
+
+#### calcAbstraction()
+
+Recalculates the clause abstraction.
+
+```cpp
+void calcAbstraction();
+```
+
+<Warning>
+  Must be called manually after in-place modifications to maintain correctness of subsumption operations.
+</Warning>
+
+### CRef
+
+Clause reference type for efficiently referencing clauses.
+
+```cpp
+typedef RegionAllocator<uint32_t>::Ref CRef;
+```
+
+### CRef_Undef
+
+Constant representing an undefined clause reference.
+
+```cpp
+const CRef CRef_Undef = RegionAllocator<uint32_t>::Ref_Undef;
+```
+
+## Clause allocator
+
+### ClauseAllocator
+
+Manages memory allocation for clauses.
+
+```cpp
+class ClauseAllocator {
+public:
+    ClauseAllocator(uint32_t start_cap);
+    ClauseAllocator();
+    
+    void moveTo(ClauseAllocator& to);
+    CRef alloc(const vec<Lit>& ps, bool learnt = false);
+    CRef alloc(const Clause& from);
+    
+    uint32_t size() const;
+    uint32_t wasted() const;
+    
+    Clause& operator[](CRef r);
+    const Clause& operator[](CRef r) const;
+    Clause* lea(CRef r);
+    const Clause* lea(CRef r) const;
+    CRef ael(const Clause* t);
+    
+    void free(CRef cid);
+    void reloc(CRef& cr, ClauseAllocator& to);
+    
+    bool extra_clause_field;
+};
+```
+
+### ClauseAllocator methods
+
+#### alloc()
+
+Allocates a new clause.
+
+```cpp
+CRef alloc(const vec<Lit>& ps, bool learnt = false);
+CRef alloc(const Clause& from);
+```
+
+<ParamField path="ps" type="const vec<Lit>&">
+  Vector of literals for the new clause.
+</ParamField>
+
+<ParamField path="learnt" type="bool" default="false">
+  Whether this is a learnt clause.
+</ParamField>
+
+<ParamField path="from" type="const Clause&">
+  Existing clause to copy.
+</ParamField>
+
+<ResponseField name="return" type="CRef">
+  Reference to the allocated clause.
+</ResponseField>
+
+#### free()
+
+Deallocates a clause.
+
+```cpp
+void free(CRef cid);
+```
+
+<ParamField path="cid" type="CRef" required>
+  Reference to the clause to free.
+</ParamField>
+
+#### operator[]()
+
+Dereferences a clause reference.
+
+```cpp
+Clause& operator[](CRef r);
+const Clause& operator[](CRef r) const;
+```
+
+<ParamField path="r" type="CRef" required>
+  Clause reference.
+</ParamField>
+
+<ResponseField name="return" type="Clause&">
+  Reference to the clause.
+</ResponseField>
+
+## Iterators
+
+### ClauseIterator
+
+Iterator for traversing clause collections.
+
+```cpp
+class ClauseIterator {
+public:
+    ClauseIterator(const ClauseAllocator& ca, const CRef* crefs);
+    
+    void operator++();
+    const Clause& operator*() const;
+    bool operator==(const ClauseIterator& ci) const;
+    bool operator!=(const ClauseIterator& ci) const;
+};
+```
+
+### TrailIterator
+
+Iterator for traversing the assignment trail.
+
+```cpp
+class TrailIterator {
+public:
+    TrailIterator(const Lit* lits);
+    
+    void operator++();
+    Lit operator*() const;
+    bool operator==(const TrailIterator& ti) const;
+    bool operator!=(const TrailIterator& ti) const;
+};
+```
+
+## Maps and sets
+
+### VMap
+
+Map from variables to values.
+
+```cpp
+template<class T>
+class VMap : public IntMap<Var, T> {};
+```
+
+### LMap
+
+Map from literals to values.
+
+```cpp
+template<class T>
+class LMap : public IntMap<Lit, T, MkIndexLit> {};
+```
+
+### LSet
+
+Set of literals.
+
+```cpp
+class LSet : public IntSet<Lit, MkIndexLit> {};
+```
+
+### CMap
+
+Map from clause references to values.
+
+```cpp
+template<class T>
+class CMap {
+public:
+    void clear();
+    int size() const;
+    void insert(CRef cr, const T& t);
+    void remove(CRef cr);
+    bool has(CRef cr, T& t);
+    const T& operator[](CRef cr) const;
+    T& operator[](CRef cr);
+    void moveTo(CMap& other);
+};
+```
+
+## Occurrence lists
+
+### OccLists
+
+Maintains occurrence lists with lazy deletion.
+
+```cpp
+template<class K, class Vec, class Deleted, class MkIndex>
+class OccLists {
+public:
+    void init(const K& idx);
+    Vec& operator[](const K& idx);
+    Vec& lookup(const K& idx);
+    void cleanAll();
+    void clean(const K& idx);
+    void smudge(const K& idx);
+    void clear(bool free = true);
+};
+```
+
+<Note>
+  Occurrence lists track which clauses contain each literal. The "smudge/clean" mechanism provides lazy deletion for efficiency.
+</Note>
+
+## Usage examples
+
+### Working with literals
+
+```cpp
+// Create a variable
+Var x = 0;
+
+// Create literals
+Lit pos_x = mkLit(x, false);  // positive literal
+Lit neg_x = mkLit(x, true);   // negative literal
+
+// Negate a literal
+Lit neg = ~pos_x;
+
+// Extract variable and sign
+Var v = var(pos_x);
+bool s = sign(neg_x);
+```
+
+### Working with lbool
+
+```cpp
+lbool val = l_Undef;
+
+if (val == l_True) {
+    // Handle true case
+} else if (val == l_False) {
+    // Handle false case
+} else {
+    // Handle undefined case
+}
+
+// Logical operations
+lbool result = val && l_True;
+lbool xor_result = val ^ true;
+```
+
+### Working with clauses
+
+```cpp
+ClauseAllocator ca;
+vec<Lit> lits;
+lits.push(mkLit(0));
+lits.push(mkLit(1));
+lits.push(mkLit(2, true));
+
+// Allocate a clause
+CRef cr = ca.alloc(lits, false);
+
+// Access the clause
+Clause& c = ca[cr];
+int clause_size = c.size();
+Lit first_lit = c[0];
+
+// Check if learnt
+if (c.learnt()) {
+    float act = c.activity();
+}
+
+// Free the clause
+ca.free(cr);
+```

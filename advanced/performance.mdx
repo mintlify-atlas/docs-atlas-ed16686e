@@ -1,0 +1,505 @@
+---
+title: Performance optimization
+description: Techniques and strategies to maximize MiniSat solving speed
+---
+
+MiniSat is already highly optimized, but understanding its performance characteristics can help you get the most out of the solver.
+
+## Key performance features
+
+MiniSat incorporates several advanced techniques that contribute to its efficiency:
+
+### Phase saving
+
+Phase saving remembers previous variable assignments and reuses them as branching preferences.
+
+<ParamField path="phase_saving" type="integer" default="2">
+  Level of phase saving
+  
+  - `0`: No phase saving
+  - `1`: Limited phase saving (within search subtrees)
+  - `2`: Full phase saving (across restarts)
+  
+  ```cpp
+  solver.phase_saving = 2;  // Recommended for most problems
+  ```
+</ParamField>
+
+**Why it matters**: Modern SAT instances (especially industrial ones) have local structure. Phase saving exploits this by quickly finding similar solutions after restarts.
+
+<Info>
+  Full phase saving is enabled by default and works well for structured problems. For purely random instances, try `phase_saving = 0`.
+</Info>
+
+### Luby restarts
+
+Luby restart sequence provides theoretical guarantees and empirically good performance.
+
+<ParamField path="luby_restart" type="boolean" default="true">
+  Use Luby restart sequence
+  
+  ```cpp
+  solver.luby_restart = true;  // Luby sequence (default)
+  solver.luby_restart = false; // Geometric sequence
+  ```
+</ParamField>
+
+The Luby sequence: 1, 1, 2, 1, 1, 2, 4, 1, 1, 2, 1, 1, 2, 4, 8, ...
+
+**When to use**:
+- **Luby (default)**: Better for unpredictable problems
+- **Geometric**: Faster long runs if you know the instance is hard
+
+### Conflict clause minimization
+
+Minimizes learned clauses by removing redundant literals.
+
+<ParamField path="ccmin_mode" type="integer" default="2">
+  Conflict clause minimization mode
+  
+  - `0`: No minimization
+  - `1`: Basic minimization
+  - `2`: Deep minimization (default)
+  
+  ```cpp
+  solver.ccmin_mode = 2;  // Best for most problems
+  ```
+</ParamField>
+
+**Impact**: Deep minimization produces smaller learned clauses, leading to:
+- Faster propagation (shorter clauses)
+- Less memory usage
+- Better long-term performance
+
+Keep at default (2) unless profiling shows minimization overhead.
+
+### Variable and clause activity
+
+VSIDS (Variable State Independent Decaying Sum) heuristic guides variable selection.
+
+<ParamField path="var_decay" type="double" default="0.95">
+  Variable activity decay factor
+  
+  ```cpp
+  solver.var_decay = 0.95;  // Default
+  solver.var_decay = 0.99;  // Slower decay (longer memory)
+  solver.var_decay = 0.80;  // Faster decay (more recent conflicts)
+  ```
+</ParamField>
+
+<ParamField path="clause_decay" type="double" default="0.999">
+  Clause activity decay factor
+  
+  ```cpp
+  solver.clause_decay = 0.999;  // Default
+  ```
+</ParamField>
+
+**Tuning guidance**:
+- **Higher decay values** (closer to 1): Variables/clauses stay relevant longer
+- **Lower decay values**: Solver adapts faster to recent conflicts
+
+Default values work well for most instances.
+
+## Optimizing for problem types
+
+Different problem classes benefit from different configurations.
+
+### Industrial instances
+
+Structured, real-world problems from hardware verification, planning, etc.
+
+```cpp
+Minisat::SimpSolver solver;
+
+// Use full preprocessing
+solver.use_elim = true;
+solver.clause_lim = 30;  // More aggressive elimination
+solver.grow = 10;
+
+// Strong phase saving for structure
+solver.phase_saving = 2;
+
+// Keep defaults for other parameters
+solver.var_decay = 0.95;
+solver.clause_decay = 0.999;
+solver.ccmin_mode = 2;
+```
+
+<Tip>
+  Industrial instances often benefit from preprocessing. Always use `SimpSolver`.
+</Tip>
+
+### Random instances
+
+Uniform random k-SAT instances with no structure.
+
+```cpp
+Minisat::Solver solver;
+
+// Reduce phase saving
+solver.phase_saving = 0;
+
+// Add randomization
+solver.random_var_freq = 0.01;  // 1% random decisions
+solver.rnd_init_act = true;
+
+// Faster restarts
+solver.restart_first = 50;  // Instead of default 100
+
+// Keep other defaults
+```
+
+<Note>
+  Random instances don't benefit from preprocessing or phase saving since there's no structure to exploit.
+</Note>
+
+### Hard combinatorial problems
+
+Difficult structured instances (cryptographic, mathematical).
+
+```cpp
+Minisat::SimpSolver solver;
+
+// Maximum preprocessing
+solver.use_elim = true;
+solver.use_asymm = true;  // Enable expensive preprocessing
+solver.clause_lim = -1;   // No limit on resolvent length
+
+// Long-term learning
+solver.var_decay = 0.99;
+solver.clause_decay = 0.9999;
+
+// Full phase saving
+solver.phase_saving = 2;
+
+// Geometric restarts for long runs
+solver.luby_restart = false;
+solver.restart_inc = 1.5;
+```
+
+<Warning>
+  These settings prioritize solving over speed. Preprocessing and deep minimization take longer upfront.
+</Warning>
+
+## Memory optimization
+
+Reduce memory footprint for large instances.
+
+### Aggressive garbage collection
+
+```cpp
+solver.garbage_frac = 0.1;  // GC at 10% waste (vs 20% default)
+solver.simp_garbage_frac = 0.2;  // For preprocessing
+```
+
+**Tradeoff**: More frequent GC reduces memory but increases runtime overhead.
+
+### Learned clause limits
+
+```cpp
+// Minimum number of learned clauses to keep
+solver.min_learnts_lim = 0;  // Default, calculated dynamically
+
+// The solver automatically adjusts learned clause limit
+// based on original clause count and solving progress
+```
+
+MiniSat automatically manages learned clauses. Intervention is rarely needed.
+
+### Incremental solving
+
+For applications that add clauses repeatedly:
+
+```cpp
+Minisat::Solver solver;  // Use base Solver, not SimpSolver
+
+// Disable simplification for incremental use
+solver.remove_satisfied = false;
+
+for (int round = 0; round < num_rounds; round++) {
+    // Add new clauses
+    for (auto& clause : new_clauses[round]) {
+        solver.addClause(clause);
+    }
+    
+    // Solve incrementally
+    vec<Lit> assumptions;
+    bool result = solver.solve(assumptions);
+    
+    if (!result) {
+        printf("UNSAT in round %d\n", round);
+        break;
+    }
+}
+```
+
+<Tip>
+  For incremental solving, use base `Solver` instead of `SimpSolver` to avoid preprocessing overhead.
+</Tip>
+
+## Profiling and diagnostics
+
+### Enable verbose output
+
+```cpp
+solver.verbosity = 2;  // Detailed statistics
+
+solver.solve();
+```
+
+Output shows:
+- Conflicts per second
+- Propagations per second
+- Restart intervals
+- Learned clause database size
+
+### Inspect statistics
+
+```cpp
+printf("=== Statistics ===\n");
+printf("Conflicts:       %lld\n", solver.conflicts);
+printf("Decisions:       %lld\n", solver.decisions);
+printf("Random decisions: %lld\n", solver.rnd_decisions);
+printf("Propagations:    %lld\n", solver.propagations);
+printf("Restarts:        %lld\n", solver.starts);
+
+// Compute rates
+if (solver.conflicts > 0) {
+    printf("Props per conflict: %.2f\n", 
+           (double)solver.propagations / solver.conflicts);
+    printf("Decisions per conflict: %.2f\n",
+           (double)solver.decisions / solver.conflicts);
+}
+```
+
+### Key performance indicators
+
+<Tabs>
+  <Tab title="Conflicts/sec">
+    **High is good**: Shows raw solving speed. Typical range: 10k-500k conflicts/sec.
+    
+    If too low:
+    - Complex clause database (reduce learned clause retention)
+    - Expensive propagation (check clause sizes)
+  </Tab>
+  
+  <Tab title="Props/conflict">
+    **Lower is better**: Measures efficiency of conflict-driven search.
+    
+    High values indicate:
+    - Deep search trees before conflicts
+    - May benefit from more frequent restarts
+  </Tab>
+  
+  <Tab title="Random decisions">
+    **Should be low**: High ratio suggests heuristic isn't working.
+    
+    If `random_var_freq = 0` but many random decisions:
+    - All variables have similar activities
+    - Problem may lack structure
+  </Tab>
+  
+  <Tab title="Learned clauses">
+    **Check growth**: Learned clause database should stabilize.
+    
+    If growing unbounded:
+    - Adjust `learntsize_factor` and `learntsize_inc`
+    - Enable more aggressive deletion
+  </Tab>
+</Tabs>
+
+## Parallel solving strategies
+
+While MiniSat itself is single-threaded, you can run parallel instances:
+
+### Portfolio approach
+
+```cpp
+#include <thread>
+#include <atomic>
+
+std::atomic<bool> solved(false);
+lbool final_result = l_Undef;
+
+void solve_with_config(Minisat::Solver& solver, const char* name) {
+    vec<Lit> assumptions;
+    lbool result = solver.solveLimited(assumptions);
+    
+    if (result != l_Undef && !solved.exchange(true)) {
+        printf("%s solved it!\n", name);
+        final_result = result;
+        // Interrupt other threads...
+    }
+}
+
+// Create solvers with different configs
+Minisat::Solver s1, s2, s3, s4;
+// Load same problem into all...
+
+// Configure differently
+s1.phase_saving = 2; s1.random_var_freq = 0.0;
+s2.phase_saving = 0; s2.random_var_freq = 0.02;
+s3.luby_restart = true;
+s4.luby_restart = false; s4.restart_inc = 1.5;
+
+// Run in parallel
+std::thread t1(solve_with_config, std::ref(s1), "conservative");
+std::thread t2(solve_with_config, std::ref(s2), "random");
+std::thread t3(solve_with_config, std::ref(s3), "luby");
+std::thread t4(solve_with_config, std::ref(s4), "geometric");
+
+t1.join(); t2.join(); t3.join(); t4.join();
+```
+
+<Info>
+  Portfolio solving is embarrassingly parallel: different configurations explore the search space differently.
+</Info>
+
+## Blocking literals optimization
+
+MiniSat uses **blocking literals** in watched literals for efficient propagation:
+
+```cpp
+struct Watcher {
+    CRef cref;     // Clause reference
+    Lit  blocker;  // Blocking literal
+};
+```
+
+The `blocker` literal provides a fast check: if it's true, the clause is satisfied without dereferencing the clause.
+
+**Performance impact**: Reduces memory access during propagation, speeding up the inner loop by 20-30%.
+
+<Note>
+  This optimization is built-in and automatic. No user configuration needed.
+</Note>
+
+## Common performance pitfalls
+
+### Pitfall 1: Using Solver instead of SimpSolver
+
+```cpp
+// ❌ Bad: Missing preprocessing gains
+Minisat::Solver solver;
+
+// ✅ Good: Preprocessing can reduce problem size
+Minisat::SimpSolver solver;
+```
+
+### Pitfall 2: Not reusing solver instances
+
+```cpp
+// ❌ Bad: Creating new solver each time
+for (int i = 0; i < 1000; i++) {
+    Minisat::Solver solver;
+    solver.addClause(...);
+    solver.solve();
+}
+
+// ✅ Good: Incremental solving
+Minisat::Solver solver;
+for (int i = 0; i < 1000; i++) {
+    solver.addClause(...);
+    solver.solve();
+}
+```
+
+Learned clauses and heuristic knowledge carry over between solves.
+
+### Pitfall 3: Over-tuning
+
+```cpp
+// ❌ Bad: Changing everything
+solver.var_decay = 0.87;
+solver.clause_decay = 0.9234;
+solver.random_var_freq = 0.0123;
+// ... 15 more parameters
+
+// ✅ Good: Start with defaults
+// Only change parameters with measured benefit
+```
+
+<Warning>
+  Default parameters are well-tuned. Only adjust if profiling identifies a specific bottleneck.
+</Warning>
+
+### Pitfall 4: Ignoring preprocessing
+
+```cpp
+// ❌ Bad: Disabling without reason
+solver.use_elim = false;
+
+// ✅ Good: Let preprocessing help
+solver.use_elim = true;  // Usually beneficial
+```
+
+Preprocessing time is usually recovered during solving.
+
+## Benchmarking guidelines
+
+1. **Warm up**: First solve may include one-time initialization
+2. **Multiple runs**: SAT solving has variance; average over 3-5 runs
+3. **Timeout**: Set reasonable limits (300-1800 seconds typical)
+4. **Compare fairly**: Same hardware, same memory limits
+5. **Report PAR-2**: For timeouts, use twice the timeout as penalty score
+
+## Advanced: Custom heuristics
+
+For research or special applications, you can modify branching:
+
+```cpp
+// Set user polarity for specific variables
+solver.setPolarity(var, l_True);  // Prefer positive phase
+
+// Make variable ineligible for branching
+solver.setDecisionVar(var, false);
+```
+
+Use sparingly - MiniSat's heuristics are highly optimized.
+
+## Performance summary
+
+<CardGroup cols={2}>
+  <Card title="For industrial" icon="industry">
+    - Use `SimpSolver`
+    - Enable `phase_saving = 2`
+    - Keep default parameters
+    - Aggressive preprocessing
+  </Card>
+  
+  <Card title="For random" icon="shuffle">
+    - Use `Solver` (skip preprocessing)
+    - Disable phase saving
+    - Add randomization
+    - Faster restarts
+  </Card>
+  
+  <Card title="For hard instances" icon="brain">
+    - Maximum preprocessing
+    - Long-term learning
+    - Geometric restarts
+    - Deep minimization
+  </Card>
+  
+  <Card title="For incremental" icon="layer-group">
+    - Use base `Solver`
+    - Disable simplification
+    - Reuse instances
+    - Monitor learned clauses
+  </Card>
+</CardGroup>
+
+## Related topics
+
+<CardGroup cols={3}>
+  <Card title="Configuration" href="/advanced/configuration">
+    All tunable parameters
+  </Card>
+  <Card title="Resource limits" href="/advanced/resource-limits">
+    Control time and memory
+  </Card>
+  <Card title="Preprocessing" href="/advanced/preprocessing">
+    Simplification techniques
+  </Card>
+</CardGroup>

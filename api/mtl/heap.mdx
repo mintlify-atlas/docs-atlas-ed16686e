@@ -1,0 +1,274 @@
+---
+title: Heap<K, Comp, MkIndex>
+description: Min-heap implementation with support for decrease and increase key operations
+---
+
+## Overview
+
+The `Heap` template class implements a binary min-heap data structure with efficient decrease/increase key operations. It uses an `IntMap` to track element positions, enabling O(log n) updates for arbitrary elements.
+
+## Template parameters
+
+<ParamField path="K" type="typename" required>
+  The key type stored in the heap
+</ParamField>
+
+<ParamField path="Comp" type="typename" required>
+  Comparator type defining the heap ordering. The heap maintains a minimum with respect to this comparator.
+</ParamField>
+
+<ParamField path="MkIndex" type="typename" default="MkIndexDefault<K>">
+  Functor that converts keys to integer indices for the internal position map
+</ParamField>
+
+## Constructor
+
+```cpp
+Heap(const Comp& c, MkIndex _index = MkIndex())
+```
+
+<ParamField path="c" type="const Comp&" required>
+  Comparator instance used for heap ordering
+</ParamField>
+
+<ParamField path="_index" type="MkIndex" default="MkIndex()">
+  Index conversion functor instance
+</ParamField>
+
+## Size and query operations
+
+### size
+
+```cpp
+int size() const
+```
+
+Returns the number of elements in the heap.
+
+### empty
+
+```cpp
+bool empty() const
+```
+
+Returns true if the heap contains no elements.
+
+### inHeap
+
+```cpp
+bool inHeap(K k) const
+```
+
+Checks whether a key is currently in the heap.
+
+<ParamField path="k" type="K" required>
+  Key to check for membership
+</ParamField>
+
+### operator[]
+
+```cpp
+int operator[](int index) const
+```
+
+Accesses the key at the given heap position (not sorted order).
+
+<ParamField path="index" type="int" required>
+  Position in the internal heap array (must be < size())
+</ParamField>
+
+## Modification operations
+
+### insert
+
+```cpp
+void insert(K k)
+```
+
+Inserts a new key into the heap. The key must not already be present.
+
+<ParamField path="k" type="K" required>
+  Key to insert (must not already be in heap)
+</ParamField>
+
+<Info>
+Time complexity: O(log n) where n is the number of elements
+</Info>
+
+### remove
+
+```cpp
+void remove(K k)
+```
+
+Removes a specific key from the heap. The key must be present.
+
+<ParamField path="k" type="K" required>
+  Key to remove (must be in heap)
+</ParamField>
+
+<Info>
+Time complexity: O(log n)
+</Info>
+
+### removeMin
+
+```cpp
+K removeMin()
+```
+
+Removes and returns the minimum element according to the comparator. Heap must not be empty.
+
+**Returns:** The minimum key that was removed
+
+<Info>
+Time complexity: O(log n)
+</Info>
+
+## Priority update operations
+
+### decrease
+
+```cpp
+void decrease(K k)
+```
+
+Notifies the heap that the priority of key `k` has decreased. The key must be in the heap.
+
+<ParamField path="k" type="K" required>
+  Key whose priority decreased (must be in heap)
+</ParamField>
+
+<Note>
+You must call this after externally modifying the key's priority to maintain heap invariants.
+</Note>
+
+### increase
+
+```cpp
+void increase(K k)
+```
+
+Notifies the heap that the priority of key `k` has increased. The key must be in the heap.
+
+<ParamField path="k" type="K" required>
+  Key whose priority increased (must be in heap)
+</ParamField>
+
+### update
+
+```cpp
+void update(K k)
+```
+
+Safe variant that handles both insert and priority changes. If the key is not in the heap, it is inserted. Otherwise, the heap is reorganized to reflect any priority change.
+
+<ParamField path="k" type="K" required>
+  Key to update or insert
+</ParamField>
+
+<Info>
+This is the safest method when you're unsure whether priority increased or decreased.
+</Info>
+
+## Bulk operations
+
+### build
+
+```cpp
+void build(const vec<K>& ns)
+```
+
+Rebuilds the heap from scratch using the provided keys. This is more efficient than repeated insertions.
+
+<ParamField path="ns" type="const vec<K>&" required>
+  Vector of keys to build heap from
+</ParamField>
+
+<Note>
+Keys in `ns` must already be reserved in the internal index map.
+</Note>
+
+<Info>
+Time complexity: O(n) where n is the number of elements
+</Info>
+
+### clear
+
+```cpp
+void clear(bool dispose = false)
+```
+
+Removes all elements from the heap.
+
+<ParamField path="dispose" type="bool" default="false">
+  If true, deallocates internal storage
+</ParamField>
+
+## Internal methods
+
+The heap uses standard binary heap index traversal:
+
+- **left child**: `2*i + 1`
+- **right child**: `2*(i + 1)`
+- **parent**: `(i - 1) / 2`
+
+Heap invariants are maintained through:
+- `percolateUp()`: Restores heap property after decrease operations
+- `percolateDown()`: Restores heap property after increase operations
+
+## Usage example
+
+```cpp
+#include "minisat/mtl/Heap.h"
+
+using namespace Minisat;
+
+// Comparator for min-heap of integers
+struct IntLt {
+    bool operator()(int a, int b) const { return a < b; }
+};
+
+Heap<int, IntLt> heap(IntLt());
+
+heap.insert(10);
+heap.insert(5);
+heap.insert(20);
+heap.insert(3);
+
+while (!heap.empty()) {
+    int min = heap.removeMin();
+    printf("%d\n", min); // Prints: 3, 5, 10, 20
+}
+```
+
+## Typical use case in MiniSat
+
+MiniSat uses the heap to maintain variable activity scores for decision heuristics:
+
+```cpp
+struct VarOrderLt {
+    const vec<double>& activity;
+    bool operator()(Var x, Var y) const { 
+        return activity[x] > activity[y]; 
+    }
+    VarOrderLt(const vec<double>& act) : activity(act) {}
+};
+
+Heap<Var, VarOrderLt> order_heap;
+
+// When variable activity changes:
+if (order_heap.inHeap(var)) {
+    order_heap.decrease(var); // Activity increased
+}
+```
+
+## Performance characteristics
+
+- **Insert**: O(log n)
+- **Remove**: O(log n)
+- **Remove min**: O(log n)
+- **Decrease/increase**: O(log n)
+- **Check membership**: O(1) amortized
+- **Build**: O(n)
+- **Space**: O(n) for heap array plus O(n) for position map

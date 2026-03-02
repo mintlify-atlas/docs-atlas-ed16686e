@@ -1,0 +1,321 @@
+---
+title: Assumptions
+description: Use assumptions for efficient incremental solving without permanently adding clauses
+---
+
+Assumptions allow you to temporarily add unit clauses for a single solve call without permanently modifying the formula.
+
+## What are assumptions?
+
+Assumptions are literals that are assumed to be true only for a specific solve call. They are ideal for:
+
+- Testing different scenarios without modifying the formula
+- Implementing backtracking search
+- Exploring the solution space
+- Core extraction for UNSAT problems
+
+## Basic usage
+
+Pass assumptions to the `solve()` method:
+
+```cpp
+#include "minisat/core/Solver.h"
+#include "minisat/mtl/Vec.h"
+#include <iostream>
+
+using namespace Minisat;
+
+int main() {
+    Solver solver;
+    
+    Var a = solver.newVar();
+    Var b = solver.newVar();
+    Var c = solver.newVar();
+    
+    // Add permanent clauses
+    solver.addClause(mkLit(a), mkLit(b));
+    solver.addClause(~mkLit(a), mkLit(c));
+    solver.addClause(~mkLit(b), mkLit(c));
+    
+    // Solve with assumption: a must be true
+    vec<Lit> assumptions;
+    assumptions.push(mkLit(a));
+    
+    bool sat = solver.solve(assumptions);
+    std::cout << "With a=true: " << (sat ? "SAT" : "UNSAT") << std::endl;
+    
+    // Solve with different assumption: a must be false
+    assumptions.clear();
+    assumptions.push(~mkLit(a));
+    
+    sat = solver.solve(assumptions);
+    std::cout << "With a=false: " << (sat ? "SAT" : "UNSAT") << std::endl;
+    
+    // Solve without assumptions
+    assumptions.clear();
+    sat = solver.solve(assumptions);
+    std::cout << "No assumptions: " << (sat ? "SAT" : "UNSAT") << std::endl;
+    
+    return 0;
+}
+```
+
+## Multiple assumptions
+
+You can pass multiple assumptions simultaneously:
+
+```cpp
+vec<Lit> assumptions;
+assumptions.push(mkLit(x));
+assumptions.push(~mkLit(y));
+assumptions.push(mkLit(z));
+
+bool sat = solver.solve(assumptions);
+```
+
+This is equivalent to temporarily adding unit clauses for each assumption.
+
+## Convenient assumption syntax
+
+MiniSat provides overloaded `solve()` methods for common cases:
+
+```cpp
+// Single assumption
+bool sat = solver.solve(mkLit(x));
+
+// Two assumptions
+bool sat = solver.solve(mkLit(x), ~mkLit(y));
+
+// Three assumptions
+bool sat = solver.solve(mkLit(x), mkLit(y), mkLit(z));
+
+// Many assumptions
+vec<Lit> assumptions;
+assumptions.push(mkLit(x));
+assumptions.push(mkLit(y));
+bool sat = solver.solve(assumptions);
+```
+
+## Extracting UNSAT cores
+
+When solving with assumptions returns UNSAT, you can extract the conflict:
+
+```cpp
+#include "minisat/core/Solver.h"
+#include <iostream>
+
+using namespace Minisat;
+
+int main() {
+    Solver solver;
+    
+    Var a = solver.newVar();
+    Var b = solver.newVar();
+    Var c = solver.newVar();
+    
+    // Add clauses that create a conflict under certain assumptions
+    solver.addClause(mkLit(a), mkLit(b));
+    solver.addClause(~mkLit(a));
+    solver.addClause(~mkLit(b));
+    
+    // Try to solve with assumptions
+    vec<Lit> assumptions;
+    assumptions.push(mkLit(c));
+    
+    bool sat = solver.solve(assumptions);
+    
+    if (!sat) {
+        std::cout << "UNSAT. Conflict literals:" << std::endl;
+        
+        // The conflict field contains literals involved in the conflict
+        for (int i = 0; i < solver.conflict.size(); i++) {
+            Lit lit = solver.conflict[i];
+            std::cout << "  " << (sign(lit) ? "-" : "") 
+                      << var(lit) << std::endl;
+        }
+    }
+    
+    return 0;
+}
+```
+
+<Note>
+The `conflict` field is a `LSet` (set of literals) representing the conflict clause derived from the assumptions.
+</Note>
+
+## Backtracking search example
+
+Assumptions are perfect for implementing search algorithms:
+
+```cpp
+#include "minisat/core/Solver.h"
+#include <iostream>
+#include <vector>
+
+using namespace Minisat;
+
+class SearchSolver {
+    Solver solver;
+    std::vector<Var> decisionVars;
+    
+public:
+    void addVariable() {
+        decisionVars.push_back(solver.newVar());
+    }
+    
+    void addConstraint(const vec<Lit>& clause) {
+        solver.addClause(clause);
+    }
+    
+    bool search(int depth, vec<Lit>& assumptions) {
+        if (depth == decisionVars.size()) {
+            return solver.solve(assumptions);
+        }
+        
+        Var v = decisionVars[depth];
+        
+        // Try positive assignment
+        assumptions.push(mkLit(v));
+        if (search(depth + 1, assumptions)) {
+            return true;
+        }
+        assumptions.pop();
+        
+        // Try negative assignment
+        assumptions.push(~mkLit(v));
+        if (search(depth + 1, assumptions)) {
+            return true;
+        }
+        assumptions.pop();
+        
+        return false;
+    }
+    
+    bool solve() {
+        vec<Lit> assumptions;
+        return search(0, assumptions);
+    }
+    
+    lbool getValue(Var v) {
+        return solver.modelValue(v);
+    }
+};
+
+int main() {
+    SearchSolver search;
+    
+    // Add variables
+    for (int i = 0; i < 4; i++) {
+        search.addVariable();
+    }
+    
+    // Add constraints (example)
+    // ...
+    
+    if (search.solve()) {
+        std::cout << "Solution found via backtracking search" << std::endl;
+    }
+    
+    return 0;
+}
+```
+
+## Assumptions vs permanent clauses
+
+<CodeGroup>
+```cpp Permanent clauses
+// Permanently adds to formula
+solver.addClause(mkLit(x));
+solver.addClause(mkLit(y));
+
+bool sat1 = solver.solve();
+bool sat2 = solver.solve();  // x and y still forced true
+```
+
+```cpp Assumptions
+// Temporary for this solve only
+vec<Lit> assumptions;
+assumptions.push(mkLit(x));
+assumptions.push(mkLit(y));
+
+bool sat1 = solver.solve(assumptions);
+bool sat2 = solver.solve();  // x and y not forced anymore
+```
+</CodeGroup>
+
+## Performance tips
+
+<Steps>
+
+### Reuse assumption vectors
+
+```cpp
+vec<Lit> assumptions;
+
+// Solve multiple times with different assumptions
+for (int i = 0; i < 100; i++) {
+    assumptions.clear();
+    assumptions.push(mkLit(vars[i]));
+    
+    bool sat = solver.solve(assumptions);
+    // ...
+}
+```
+
+### Use assumptions for temporary constraints
+
+Prefer assumptions over adding and removing clauses:
+
+```cpp
+// Good: use assumptions
+vec<Lit> assumptions;
+assumptions.push(mkLit(x));
+bool sat = solver.solve(assumptions);
+
+// Bad: MiniSat doesn't support clause removal
+// (would need to create a new solver)
+```
+
+### Minimize assumption sets
+
+Smaller assumption sets lead to faster solving:
+
+```cpp
+// Only include essential assumptions
+vec<Lit> assumptions;
+assumptions.push(mkLit(critical_var));
+// Don't add redundant assumptions
+```
+
+</Steps>
+
+## Using solveLimited with assumptions
+
+For resource-bounded solving with assumptions:
+
+```cpp
+Solver solver;
+
+// Set resource limits
+solver.setConfBudget(1000);  // Max 1000 conflicts
+
+vec<Lit> assumptions;
+assumptions.push(mkLit(x));
+
+lbool result = solver.solveLimited(assumptions);
+
+if (result == l_True) {
+    std::cout << "SAT" << std::endl;
+} else if (result == l_False) {
+    std::cout << "UNSAT" << std::endl;
+} else {  // l_Undef
+    std::cout << "UNKNOWN (resource limit reached)" << std::endl;
+}
+
+// Clear budget for next solve
+solver.budgetOff();
+```
+
+<Info>
+Assumptions are implemented efficiently in MiniSat and don't significantly impact performance compared to permanent clauses.
+</Info>

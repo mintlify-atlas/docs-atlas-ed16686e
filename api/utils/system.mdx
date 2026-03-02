@@ -1,0 +1,276 @@
+---
+title: System
+description: System utilities for CPU time, memory usage, resource limits, and signal handling
+---
+
+The System module provides platform-specific utilities for measuring CPU time and memory usage, setting resource limits, and handling system signals. These functions are essential for monitoring solver performance and implementing timeouts.
+
+## Time measurement
+
+### cpuTime
+
+```cpp
+static inline double cpuTime(void)
+```
+
+Returns the CPU time consumed by the current process in seconds.
+
+<ResponseField name="return" type="double">
+  CPU time in seconds
+</ResponseField>
+
+<Info>
+Implementation varies by platform:
+- **Windows/MinGW**: Uses `clock()` with `CLOCKS_PER_SEC`
+- **Unix/Linux/macOS**: Uses `getrusage(RUSAGE_SELF)` for precise user time
+</Info>
+
+### Usage
+
+```cpp
+#include "minisat/utils/System.h"
+
+using namespace Minisat;
+
+double start = cpuTime();
+// ... perform computation
+double elapsed = cpuTime() - start;
+printf("Elapsed CPU time: %.2f seconds\n", elapsed);
+```
+
+## Memory measurement
+
+### memUsed
+
+```cpp
+double memUsed()
+```
+
+Returns the current memory usage of the process in megabytes.
+
+<ResponseField name="return" type="double">
+  Current memory usage in MB, or 0 if unsupported on this architecture
+</ResponseField>
+
+<Note>
+This function returns 0 on architectures where memory measurement is not implemented.
+</Note>
+
+### memUsedPeak
+
+```cpp
+double memUsedPeak(bool strictlyPeak = false)
+```
+
+Returns the peak memory usage of the process in megabytes.
+
+<ParamField path="strictlyPeak" type="bool" default="false">
+  If true, returns only the historical peak. If false, returns the maximum of current and peak usage.
+</ParamField>
+
+<ResponseField name="return" type="double">
+  Peak memory usage in MB, or 0 if unsupported on this architecture
+</ResponseField>
+
+### Usage
+
+```cpp
+double mem_current = memUsed();
+double mem_peak = memUsedPeak();
+printf("Memory: current=%.1f MB, peak=%.1f MB\n", mem_current, mem_peak);
+```
+
+## Resource limits
+
+### limitMemory
+
+```cpp
+void limitMemory(uint64_t max_mem_mb)
+```
+
+Sets a limit on the total memory usage of the process. When the limit is exceeded, the program will be terminated by the operating system.
+
+<ParamField path="max_mem_mb" type="uint64_t" required>
+  Maximum memory limit in megabytes
+</ParamField>
+
+<Note>
+The exact semantics of memory limiting vary by architecture and operating system. On some systems, this may set a soft limit that can be exceeded temporarily.
+</Note>
+
+### Usage
+
+```cpp
+// Limit process to 2 GB of memory
+limitMemory(2048);
+```
+
+### limitTime
+
+```cpp
+void limitTime(uint32_t max_cpu_time)
+```
+
+Sets a limit on the maximum CPU time the process can consume. When the limit is exceeded, the program receives a signal (typically SIGXCPU).
+
+<ParamField path="max_cpu_time" type="uint32_t" required>
+  Maximum CPU time in seconds
+</ParamField>
+
+<Note>
+The exact semantics vary by architecture. On Unix systems, this typically uses `setrlimit(RLIMIT_CPU, ...)` which sends SIGXCPU when exceeded.
+</Note>
+
+### Usage
+
+```cpp
+// Limit CPU time to 5 minutes
+limitTime(300);
+```
+
+## Signal handling
+
+### sigTerm
+
+```cpp
+void sigTerm(void handler(int))
+```
+
+Sets up handling for available termination signals (SIGINT, SIGTERM, etc.). Allows graceful shutdown when the process receives interrupt signals.
+
+<ParamField path="handler" type="void (*)(int)" required>
+  Signal handler function that takes the signal number as parameter
+</ParamField>
+
+### Usage
+
+```cpp
+#include "minisat/utils/System.h"
+#include <signal.h>
+
+using namespace Minisat;
+
+volatile bool interrupted = false;
+
+void SIGINT_handler(int signum) {
+    interrupted = true;
+    printf("\n*** INTERRUPTED ***\n");
+}
+
+int main() {
+    sigTerm(SIGINT_handler);
+    
+    while (!interrupted) {
+        // Main computation loop
+        // Check interrupted flag periodically
+    }
+    
+    return 0;
+}
+```
+
+<Info>
+The signals handled may vary by platform. Typically includes:
+- `SIGINT` (Ctrl+C)
+- `SIGTERM` (termination request)
+- `SIGXCPU` (CPU time limit exceeded)
+</Info>
+
+## FPU precision control
+
+### setX86FPUPrecision
+
+```cpp
+void setX86FPUPrecision()
+```
+
+Ensures that double-precision floating-point values are represented with the same precision in memory and CPU registers. This is important for consistent behavior across different compilations and platforms.
+
+<Note>
+This function is primarily relevant for x86 architectures where the FPU may use extended precision (80-bit) internally. It sets the FPU control word to use 64-bit (double) precision.
+</Note>
+
+### Usage
+
+```cpp
+int main() {
+    setX86FPUPrecision();
+    // ... rest of program
+}
+```
+
+<Info>
+On Linux, this function uses `_FPU_SETCW()` from `<fpu_control.h>`. On other platforms, it may be a no-op if FPU control is not available or necessary.
+</Info>
+
+## Complete example
+
+```cpp
+#include "minisat/utils/System.h"
+#include <stdio.h>
+#include <signal.h>
+
+using namespace Minisat;
+
+volatile bool interrupted = false;
+
+void interrupt_handler(int) {
+    interrupted = true;
+}
+
+int main() {
+    // Set up FPU precision
+    setX86FPUPrecision();
+    
+    // Set resource limits
+    limitMemory(4096);  // 4 GB memory limit
+    limitTime(3600);    // 1 hour CPU time limit
+    
+    // Set up signal handler
+    sigTerm(interrupt_handler);
+    
+    // Start timing
+    double start_time = cpuTime();
+    double start_mem = memUsed();
+    
+    // Main computation
+    while (!interrupted) {
+        // ... solver loop
+        
+        // Monitor resources
+        if (cpuTime() - start_time > 600.0) {
+            printf("Timeout reached\n");
+            break;
+        }
+    }
+    
+    // Report statistics
+    printf("CPU time: %.2f s\n", cpuTime() - start_time);
+    printf("Memory used: %.1f MB\n", memUsed());
+    printf("Peak memory: %.1f MB\n", memUsedPeak());
+    
+    return 0;
+}
+```
+
+## Platform compatibility
+
+<ResponseField name="cpuTime" type="cross-platform">
+  Fully supported on Windows (MSVC, MinGW) and Unix-like systems (Linux, macOS, BSD)
+</ResponseField>
+
+<ResponseField name="memUsed / memUsedPeak" type="limited support">
+  Returns 0 on unsupported architectures. Check implementation for your specific platform.
+</ResponseField>
+
+<ResponseField name="limitMemory / limitTime" type="platform-specific">
+  Uses `setrlimit()` on Unix systems. Semantics vary by OS.
+</ResponseField>
+
+<ResponseField name="sigTerm" type="platform-specific">
+  Available signals depend on the operating system
+</ResponseField>
+
+<ResponseField name="setX86FPUPrecision" type="x86 only">
+  Only active on x86 Linux with `fpu_control.h`. No-op on other platforms.
+</ResponseField>
